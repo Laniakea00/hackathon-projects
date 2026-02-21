@@ -2,15 +2,24 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# uv binary pre-downloaded on the host (no container internet required).
+# Download: https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-musl.tar.gz
+# Extract the `uv` binary into the project root, then build.
+COPY uv /usr/local/bin/uv
+RUN chmod +x /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# --no-dev: skip dev extras.  Drop --frozen so new deps are resolved when
+# the lock file has not been regenerated yet after pyproject.toml changes.
+RUN uv sync --no-dev
 
 COPY src/ ./src/
+COPY backend/ ./backend/
+COPY scripts/ ./scripts/
+COPY llm/ ./llm/
 
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

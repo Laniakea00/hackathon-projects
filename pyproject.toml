@@ -5,10 +5,29 @@ description = "Evaluates solutions on a given dataset"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    # ── existing ──────────────────────────────────────────────────────
     "httpx>=0.27.0",
     "rich>=13.7.0",
     "aiohttp>=3.9.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
-    "ipykernel>=7.2.0"
+    "ipykernel>=7.2.0",
+    # ── storage layer ─────────────────────────────────────────────────
+    "sqlalchemy>=2.0",
+    "pgvector>=0.3",          # Vector column type for SQLAlchemy
+    "psycopg2-binary>=2.9",   # PostgreSQL driver (sync)
+    # ── ingestion ─────────────────────────────────────────────────────
+    "sentence-transformers>=3.0",   # intfloat/multilingual-e5-large
+    # ── async DB driver ───────────────────────────────────────────────
+    "asyncpg>=0.29",                # async PostgreSQL driver for SQLAlchemy
+    # ── LLM client ────────────────────────────────────────────────────
+    "openai>=1.30",                 # AsyncOpenAI for OpenAI-compatible endpoints
+    # ── env loading ───────────────────────────────────────────────────
+    "python-dotenv>=1.0",           # load .env in local development
+    # ── migrations ────────────────────────────────────────────────────
+    "alembic>=1.13",                # DB schema migrations
+    # ── bootstrap / embedding cache ───────────────────────────────────
+    "numpy>=1.26",                  # .npy embedding cache in bootstrap.py
+    # ── user schemas ──────────────────────────────────────────────────
+    "email-validator>=2.0",         # EmailStr validation in user schemas
 ]
