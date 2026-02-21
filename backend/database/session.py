@@ -101,6 +101,106 @@ def create_hnsw_index() -> None:
         conn.commit()
 
 
+# ── Embedding cache → DB loader ───────────────────────────────────────────────
+
+def init_vector_db() -> None:
+    """Load embeddings from data/.embeddings/ into DB if tables are empty.
+
+    Idempotent: exits immediately when protocols table already has rows.
+    Call from the FastAPI lifespan via asyncio.to_thread() after init_db().
+    """
+    import json
+    import logging
+    from pathlib import Path
+
+    import numpy as np
+    from sqlalchemy import insert, text
+
+    logger = logging.getLogger(__name__)
+
+    # ── Guard: skip if already populated ──────────────────────────────────────
+    with engine.connect() as conn:
+        count = conn.execute(text("SELECT COUNT(*) FROM protocols")).scalar()
+    if count and count > 0:
+        logger.info("init_vector_db: %d protocols already in DB — skipping.", count)
+        return
+
+    # ── Locate cache ───────────────────────────────────────────────────────────
+    cache_dir = Path(__file__).resolve().parent.parent.parent / "data" / ".embeddings"
+    if not cache_dir.exists():
+        logger.info("init_vector_db: cache dir %s not found — skipping.", cache_dir)
+        return
+
+    npy_files = sorted(cache_dir.glob("*.npy"))
+    if not npy_files:
+        logger.info("init_vector_db: cache dir is empty — skipping.")
+        return
+
+    logger.info("init_vector_db: found %d cached protocols — loading …", len(npy_files))
+
+    # ── Build row lists ────────────────────────────────────────────────────────
+    from backend.models.protocol import Protocol, ProtocolChunk
+
+    protocol_rows: list[dict] = []
+    chunk_rows: list[dict] = []
+
+    for npy_path in npy_files:
+        safe_id = npy_path.stem
+        json_path = cache_dir / f"{safe_id}.json"
+        if not json_path.exists():
+            logger.warning("init_vector_db: no manifest for %s — skipping.", safe_id)
+            continue
+
+        try:
+            embeddings = np.load(str(npy_path))           # shape: (n_chunks, 1024)
+            chunks: list[str] = json.loads(json_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("init_vector_db: cannot read %s — %s", safe_id, exc)
+            continue
+
+        protocol_rows.append({
+            "id": safe_id,
+            "source_file": "",
+            "title": safe_id,
+            "full_text": "",
+        })
+
+        for chunk_idx, (chunk_text, emb) in enumerate(zip(chunks, embeddings)):
+            clean = chunk_text.replace("\x00", "")   # strip NUL bytes
+            chunk_rows.append({
+                "protocol_id": safe_id,
+                "chunk_index": chunk_idx,
+                "text": clean,
+                "embedding": emb.tolist(),
+            })
+
+    if not protocol_rows:
+        logger.warning("init_vector_db: no valid cached protocols found.")
+        return
+
+    # ── Bulk insert (chunks in batches of 500) ─────────────────────────────────
+    BATCH = 500
+    db = SessionLocal()
+    try:
+        db.execute(insert(Protocol), protocol_rows)
+        for i in range(0, len(chunk_rows), BATCH):
+            db.execute(insert(ProtocolChunk), chunk_rows[i : i + BATCH])
+        db.commit()
+        logger.info(
+            "init_vector_db: inserted %d protocols, %d chunks.",
+            len(protocol_rows), len(chunk_rows),
+        )
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+    # ── Build HNSW index after all data is in ─────────────────────────────────
+    create_hnsw_index()
+    logger.info("init_vector_db: HNSW index ready.")
+
+
 # ── FastAPI dependency injectors ──────────────────────────────────────────────
 
 def get_db():

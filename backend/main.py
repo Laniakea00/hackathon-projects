@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.v1.auth import router as auth_router
 from backend.api.v1.chat import router as chat_router
-from backend.database.session import init_db
+from backend.database.session import init_db, init_vector_db
 from backend.schemas.diagnose import DiagnoseRequest, DiagnoseResponse
 from llm.generator import QazCodeHubConnector
 from llm.retriever import MedicalRetriever
@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Initialising database …")
     await asyncio.to_thread(init_db)
+
+    logger.info("Loading embeddings from cache …")
+    await asyncio.to_thread(init_vector_db)
 
     logger.info("Loading embedding model …")
     retriever = MedicalRetriever()
