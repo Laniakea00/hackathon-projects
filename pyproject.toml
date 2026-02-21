@@ -30,4 +30,8 @@ dependencies = [
     "numpy>=1.26",                  # .npy embedding cache in bootstrap.py
     # ── user schemas ──────────────────────────────────────────────────
     "email-validator>=2.0",         # EmailStr validation in user schemas
+    # ── authentication ────────────────────────────────────────────────
+    "passlib[bcrypt]>=1.7",             # password hashing
+    "python-jose[cryptography]>=3.3",   # JWT encoding/decoding
+    "python-multipart>=0.0.9",          # OAuth2PasswordRequestForm (form data)
 ]

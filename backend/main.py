@@ -16,10 +16,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.deps import require_role
+from backend.api.v1.auth import router as auth_router
 from backend.database.session import init_db
+from backend.models.user import UserRole
 from backend.schemas.diagnose import DiagnoseRequest, DiagnoseResponse
 from llm.generator import QazCodeHubConnector
 from llm.retriever import MedicalRetriever
@@ -74,6 +77,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
+
 
 # ── Dependency ────────────────────────────────────────────────────────────────
 
@@ -84,7 +89,11 @@ def _get_service(request: Request) -> RAGService:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.post("/diagnose", response_model=DiagnoseResponse)
-async def handle_diagnose(body: DiagnoseRequest, request: Request) -> DiagnoseResponse:
+async def handle_diagnose(
+    body: DiagnoseRequest,
+    request: Request,
+    _: object = Depends(require_role(UserRole.PATIENT, UserRole.ADMIN)),
+) -> DiagnoseResponse:
     """Full RAG pipeline: hybrid retrieval → LLM reasoning → structured response."""
     symptoms = (body.symptoms or "").strip()
     if not symptoms:

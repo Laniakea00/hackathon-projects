@@ -17,3 +17,8 @@ numpy>=1.26.0
 pydantic[email]>=2.6.0
 python-dotenv>=1.0.1
 aiohttp>=3.9.0
+
+# Auth
+passlib[bcrypt]>=1.7
+python-jose[cryptography]>=3.3
+python-multipart>=0.0.9

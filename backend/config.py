@@ -33,3 +33,8 @@ EMBEDDING_MODEL: str = os.getenv(
     "EMBEDDING_MODEL", "intfloat/multilingual-e5-large"
 )
 EMBEDDING_DIM: int = 1024   # output dimension of multilingual-e5-large
+
+# ── JWT ───────────────────────────────────────────────────────────────────────
+JWT_SECRET: str = os.getenv("JWT_SECRET", "change-me-in-production")
+JWT_ALGORITHM: str = "HS256"
+JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))

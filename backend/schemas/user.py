@@ -9,7 +9,8 @@ from backend.models.user import UserRole
 
 class UserCreate(BaseModel):
     email: EmailStr
-    role: UserRole = UserRole.DOCTOR
+    password: str
+    role: UserRole = UserRole.PATIENT
 
 
 class UserOut(BaseModel):
@@ -18,3 +19,13 @@ class UserOut(BaseModel):
     role: UserRole
 
     model_config = {"from_attributes": True}
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    email: str
+    role: UserRole
