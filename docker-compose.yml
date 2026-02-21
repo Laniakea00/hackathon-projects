@@ -1,0 +1,58 @@
+services:
+
+  # ── PostgreSQL + pgvector ──────────────────────────────────────────────────
+  db:
+    image: ankane/pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB:       ${POSTGRES_DB:-qazcode}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-qazcode}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Bootstrap (fast first-boot ingest) ────────────────────────────────────
+  bootstrap:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: >-
+        postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-qazcode}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://hub.qazcode.ai/v1}
+      LLM_API_KEY:  ${LLM_API_KEY:-}
+      LLM_MODEL:    ${LLM_MODEL:-oss-120b}
+    volumes:
+      - ./data:/app/data
+    command: ["uv", "run", "python", "scripts/bootstrap.py"]
+    restart: "no"
+
+  # ── FastAPI backend ────────────────────────────────────────────────────────
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: >-
+        postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-qazcode}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://hub.qazcode.ai/v1}
+      LLM_API_KEY:  ${LLM_API_KEY:-}
+      LLM_MODEL:    ${LLM_MODEL:-oss-120b}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount data directory so the ingest script can read corpus files
+      - ./data:/app/data
+
+volumes:
+  pgdata:
