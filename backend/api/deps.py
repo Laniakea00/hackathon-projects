@@ -10,7 +10,7 @@ from backend.models.user import User, UserRole
 from backend.repositories.user import UserRepository
 from backend.services.auth import decode_token
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 async def get_current_user(
@@ -24,13 +24,13 @@ async def get_current_user(
     )
     try:
         payload = decode_token(token)
-        email: str | None = payload.get("sub")
-        if not email:
+        username: str | None = payload.get("sub")
+        if not username:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
-    user = await UserRepository(session).get_by_email(email)
+    user = await UserRepository(session).get_by_username(username)
     if user is None:
         raise credentials_exception
     return user
