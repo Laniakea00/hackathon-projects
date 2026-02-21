@@ -1,7 +1,16 @@
-"""RAG service – orchestrates retrieve → generate → format pipeline."""
+"""RAG service – orchestrates retrieve → generate → format pipeline.
 
+Retrieval priority
+------------------
+1. pgvector (neural, high quality) — used when the DB has embeddings.
+2. BM25 (lexical, no embeddings needed) — automatic fallback so the API
+   works immediately, even before ``bootstrap.py`` has finished ingesting.
+"""
+
+import asyncio
 import logging
 
+from llm.bm25_retriever import bm25_search
 from llm.formatter import FALLBACK, parse_llm_response
 from llm.generator import BaseLLMConnector, build_messages
 from llm.retriever import MedicalRetriever
@@ -53,16 +62,20 @@ class RAGService:
         Validated list of DiagnosisItem objects, never empty (falls back to
         the canonical fallback item when nothing useful can be produced).
         """
-        # ── Step 1: hybrid retrieval ──────────────────────────────────────────
+        # ── Step 1: pgvector retrieval ────────────────────────────────────────
         chunks = await self.retriever.get_relevant_chunks(
             symptoms, top_k=top_k, icd_codes=icd_filter
         )
         logger.info(
-            "Retrieved %d chunks for query %r (icd_filter=%s)",
-            len(chunks),
-            symptoms[:80],
-            icd_filter,
+            "pgvector: %d chunks for %r (icd_filter=%s)",
+            len(chunks), symptoms[:80], icd_filter,
         )
+
+        # ── Step 1b: BM25 fallback (DB empty / bootstrap not done yet) ────────
+        if not chunks:
+            logger.info("pgvector empty — falling back to BM25 retriever")
+            chunks = await asyncio.to_thread(bm25_search, symptoms, top_k)
+            logger.info("BM25: %d chunks retrieved", len(chunks))
 
         if not chunks:
             logger.warning("No relevant chunks found – returning fallback.")
