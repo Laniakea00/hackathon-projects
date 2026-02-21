@@ -1,58 +1,29 @@
-"""Pydantic v2 schemas for the clinical chat API."""
+"""Pydantic schemas for chat API."""
 
-import uuid
 from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
 
-from backend.models.chat import CaseStatus, MessageRole
+
+class MessageCreate(BaseModel):
+    session_id: Optional[int] = None
+    content: str
 
 
-class ClinicalCaseCreate(BaseModel):
-    user_id: uuid.UUID
-    title: str
+class MessageOut(BaseModel):
+    id: int
+    session_id: int
+    sender: str
+    content: str
+    timestamp: datetime
+
+    model_config = {"from_attributes": True}
 
 
-class ClinicalCaseOut(BaseModel):
-    id: uuid.UUID
-    user_id: uuid.UUID
+class ChatSessionOut(BaseModel):
+    id: int
     title: str
     created_at: datetime
-    status: CaseStatus
-
-    model_config = {"from_attributes": True}
-
-
-class ChatMessageCreate(BaseModel):
-    case_id: uuid.UUID
-    role: MessageRole
-    content: str
-    context_used: Optional[list[int]] = None
-
-
-class ChatMessageOut(BaseModel):
-    id: uuid.UUID
-    case_id: uuid.UUID
-    role: MessageRole
-    content: str
-    context_used: Optional[list[int]] = None
-
-    model_config = {"from_attributes": True}
-
-
-class UserCardCreate(BaseModel):
-    case_id: uuid.UUID
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    chronic_diseases: Optional[list[str]] = None
-
-
-class UserCardOut(BaseModel):
-    id: uuid.UUID
-    case_id: uuid.UUID
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    chronic_diseases: Optional[list[str]] = None
 
     model_config = {"from_attributes": True}

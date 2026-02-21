@@ -1,21 +1,21 @@
-"""Pydantic v2 schemas for the user API."""
+"""Pydantic schemas for user auth."""
 
 import uuid
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 from backend.models.user import UserRole
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
     password: str
     role: UserRole = UserRole.PATIENT
 
 
 class UserOut(BaseModel):
     id: uuid.UUID
-    email: str
+    username: str
     role: UserRole
 
     model_config = {"from_attributes": True}
@@ -24,8 +24,3 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
-
-
-class TokenData(BaseModel):
-    email: str
-    role: UserRole

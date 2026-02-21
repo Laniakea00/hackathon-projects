@@ -12,7 +12,6 @@ from backend.database.base import Base
 
 class UserRole(str, Enum):
     ADMIN = "admin"
-    DOCTOR = "doctor"
     PATIENT = "patient"
 
 
@@ -24,7 +23,7 @@ class User(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
         SAEnum(UserRole, name="userrole", create_type=True),

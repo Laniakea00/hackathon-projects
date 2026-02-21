@@ -1,7 +1,7 @@
 """Authentication endpoints: register and login."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.session import get_async_db
@@ -13,20 +13,24 @@ from backend.services.auth import create_access_token, hash_password, verify_pas
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register(
     body: UserCreate,
     session: AsyncSession = Depends(get_async_db),
 ) -> UserOut:
-    """Create a new user account. Default role is PATIENT."""
     repo = UserRepository(session)
-    if await repo.get_by_email(body.email):
+    if await repo.get_by_username(body.username):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail="Username already taken",
         )
     user = User(
-        email=body.email,
+        username=body.username,
         hashed_password=hash_password(body.password),
         role=body.role,
     )
@@ -37,20 +41,16 @@ async def register(
 
 @router.post("/login", response_model=Token)
 async def login(
-    form: OAuth2PasswordRequestForm = Depends(),
+    body: LoginRequest,
     session: AsyncSession = Depends(get_async_db),
 ) -> Token:
-    """Exchange email + password for a JWT access token.
-
-    Uses standard OAuth2 Password flow — ``username`` field carries the email.
-    """
     repo = UserRepository(session)
-    user = await repo.get_by_email(form.username)
-    if not user or not verify_password(form.password, user.hashed_password):
+    user = await repo.get_by_username(body.username)
+    if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = create_access_token({"sub": user.email, "role": user.role.value})
+    token = create_access_token({"sub": user.username, "role": user.role.value})
     return Token(access_token=token)
