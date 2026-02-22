@@ -193,7 +193,7 @@ def _flush_batch(
                 "id": pid,
                 "source_file": record.get("source_file", ""),
                 "title": record.get("title", ""),
-                "full_text": raw_text,
+                "full_text": raw_text.replace("\x00", ""),
             }
         )
 
@@ -209,7 +209,7 @@ def _flush_batch(
                 {
                     "protocol_id": pid,
                     "chunk_index": chunk_idx,
-                    "text": chunk_text_val,
+                    "text": chunk_text_val.replace("\x00", ""),
                     "embedding": emb,
                 }
             )

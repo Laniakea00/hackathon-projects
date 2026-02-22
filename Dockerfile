@@ -2,11 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# uv binary pre-downloaded on the host (no container internet required).
-# Download: https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-musl.tar.gz
-# Extract the `uv` binary into the project root, then build.
-COPY uv /usr/local/bin/uv
-RUN chmod +x /usr/local/bin/uv
+# Install uv via pip (no pre-downloaded binary required)
+RUN pip install uv --quiet
 
 COPY pyproject.toml uv.lock ./
 # --no-dev: skip dev extras.  Drop --frozen so new deps are resolved when
