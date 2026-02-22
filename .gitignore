@@ -4,6 +4,7 @@ venv/
 .env
 
 # data directory — large files, share separately
+*.zip
 data/
 
 # pre-downloaded uv Linux binary for offline Docker builds
