@@ -172,11 +172,36 @@ class RAGService:
                     for i in range(min(3, len(top_codes)))
                 ] or FALLBACK
 
-            # Soft post-filter: log mismatches, do NOT remove predictions
+            # ── Subcode expansion ──────────────────────────────────────────────
+            # If the LLM outputs a parent code (e.g. "A39") but the retrieved
+            # context contains exactly one matching subcode (e.g. "A39.0"),
+            # promote the prediction to the more specific code.
             def _norm(code: str) -> str:
                 return (code or "").strip().upper().replace(" ", "")
 
-            for d in diagnoses:
+            def _expand_subcode(code: str) -> str:
+                n = _norm(code)
+                if "." in n or not n:
+                    return code
+                candidates = [c for c in context_icds if c.startswith(n + ".")]
+                if len(candidates) == 1:
+                    logger.info(
+                        "  Subcode expansion: %s → %s (unique match in context)",
+                        n, candidates[0],
+                    )
+                    return candidates[0]
+                return code
+
+            expanded: list[DiagnosisItem] = []
+            for d in diagnoses[:3]:
+                new_code = _expand_subcode(d.icd10_code)
+                if new_code != d.icd10_code:
+                    d = DiagnosisItem(
+                        rank=d.rank,
+                        diagnosis=d.diagnosis,
+                        icd10_code=new_code,
+                        explanation=d.explanation,
+                    )
                 p = _norm(d.icd10_code)
                 in_ctx = p in context_icds or any(
                     a.startswith(p) or p.startswith(a) for a in context_icds
@@ -186,8 +211,9 @@ class RAGService:
                         "  LLM predicted %s (%s) — NOT in context ICDs %s",
                         p, d.diagnosis[:40], sorted(context_icds)[:6],
                     )
+                expanded.append(d)
 
-            return diagnoses[:3]
+            return expanded
 
         except Exception as exc:
             logger.warning("Stage 4 (generation) failed: %s — returning FALLBACK.", exc)
