@@ -3,14 +3,12 @@
 Pipeline
 --------
 1. Query Rewrite  : LLM extracts clinical entities from the raw complaint.
-2. Vector Search  : top-12 chunks retrieved via pgvector (or BM25 fallback).
-3. Heuristic Rerank: ICD-frequency + keyword boost, keep top-5.
-4. Generation     : LLM produces 3 ranked diagnoses from the top-5 context.
+2. Vector Search  : top-12 chunks via pgvector (or BM25 fallback).
+3. Diversity      : keep best chunk per protocol, then heuristic rerank → top-5.
+4. Generation     : LLM produces ranked diagnoses from context.
+   Post-filter    : soft — logs mismatches but does NOT remove LLM predictions.
 
-Every stage is wrapped in try/except so that failures degrade gracefully:
-  - Rewrite failure → use original query.
-  - Search failure or empty → BM25 fallback → FALLBACK response.
-  - Generation failure → FALLBACK response.
+Every stage is wrapped in try/except so failures degrade gracefully.
 """
 
 import asyncio
@@ -29,6 +27,19 @@ _RERANK_TOP_K = 5
 _SEARCH_TOP_K = 12
 
 
+# ── Diversity filter ───────────────────────────────────────────────────────────
+
+def _dedupe_by_protocol(chunks: list[ChunkResult]) -> list[ChunkResult]:
+    """Keep only the closest chunk per protocol to ensure diverse context."""
+    seen: set[str] = set()
+    result: list[ChunkResult] = []
+    for chunk in sorted(chunks, key=lambda c: c.distance):
+        if chunk.protocol_id not in seen:
+            seen.add(chunk.protocol_id)
+            result.append(chunk)
+    return result
+
+
 # ── Heuristic reranker ────────────────────────────────────────────────────────
 
 def _heuristic_rerank(
@@ -36,12 +47,12 @@ def _heuristic_rerank(
     query: str,
     top_k: int = _RERANK_TOP_K,
 ) -> list[ChunkResult]:
-    """Re-score chunks by combining vector distance with ICD frequency.
+    """Re-score chunks combining vector distance + ICD frequency + title match.
 
     Scoring:
-    - Base   : 1 - distance  (higher = closer match)
-    - ICD    : codes frequent in top-12 get a boost (weight 0.3)
-    - Title  : small bonus when a title word appears in the query (0.1)
+    - Base  : 1 - distance         (higher = closer)
+    - ICD   : codes frequent in top chunks get boost (weight 0.2, reduced from 0.3)
+    - Title : bonus when title word appears in query (weight 0.1)
     """
     if not chunks:
         return chunks
@@ -58,11 +69,9 @@ def _heuristic_rerank(
     for chunk in chunks:
         base = 1.0 - min(chunk.distance, 1.0)
 
-        # нормализуем ICD boost: чем чаще коды протокола встречаются в top-12, тем выше
         icd_boost = 0.0
         if chunk.icd_codes:
-            # берем max по кодам протокола
-            icd_boost = max(icd_freq.get(code, 0) / max_freq for code in chunk.icd_codes) * 0.30
+            icd_boost = max(icd_freq.get(c, 0) / max_freq for c in chunk.icd_codes) * 0.20
 
         title_words = [w for w in (chunk.title or "").lower().split() if len(w) > 4]
         title_boost = 0.10 if any(w in query_lower for w in title_words) else 0.0
@@ -70,26 +79,15 @@ def _heuristic_rerank(
         scored.append((base + icd_boost + title_boost, chunk))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = [chunk for _, chunk in scored[:top_k]]
-
-    logger.info(
-        "Rerank: %d → %d chunks | top icd_codes: %s",
-        len(chunks), len(top),
-        [c for c, _ in icd_freq.most_common(3)],
-    )
-    return top
+    return [chunk for _, chunk in scored[:top_k]]
 
 
 # ── RAG service ───────────────────────────────────────────────────────────────
 
 class RAGService:
-    """Orchestrates the full Query Rewrite → Search → Rerank → Generate pipeline."""
+    """Orchestrates Query Rewrite → Search → Diversity → Rerank → Generate."""
 
-    def __init__(
-        self,
-        retriever: MedicalRetriever,
-        connector: BaseLLMConnector,
-    ) -> None:
+    def __init__(self, retriever: MedicalRetriever, connector: BaseLLMConnector) -> None:
         self.retriever = retriever
         self.connector = connector
 
@@ -99,27 +97,25 @@ class RAGService:
         top_k: int = _SEARCH_TOP_K,
         icd_filter: list[str] | None = None,
     ) -> list[DiagnosisItem]:
-        """Full RAG pipeline for a symptom query.
+        """Full RAG pipeline. Returns a non-empty list of DiagnosisItem."""
 
-        Returns a validated list of DiagnosisItem objects, never empty.
-        """
         # ── Stage 1: Query Rewrite ─────────────────────────────────────────────
         try:
             clinical_query = await rewrite_query(symptoms, self.connector)
+            if clinical_query != symptoms:
+                logger.info("Stage 1 rewrite | original: %r → clinical: %r",
+                            symptoms[:120], clinical_query[:120])
         except Exception as exc:
-            logger.warning("Stage 1 (rewrite) failed: %s — using original query.", exc)
+            logger.warning("Stage 1 (rewrite) failed: %s — using original.", exc)
             clinical_query = symptoms
 
-        # ── Stage 2: Vector retrieval (top-12) ────────────────────────────────
+        # ── Stage 2: Vector retrieval ──────────────────────────────────────────
         chunks: list[ChunkResult] = []
         try:
             chunks = await self.retriever.get_relevant_chunks(
                 clinical_query, top_k=top_k, icd_codes=icd_filter
             )
-            logger.info(
-                "Stage 2 (pgvector): %d chunks for %r",
-                len(chunks), clinical_query[:80],
-            )
+            logger.info("Stage 2 (pgvector): %d chunks retrieved.", len(chunks))
         except Exception as exc:
             logger.warning("Stage 2 (pgvector) failed: %s", exc)
 
@@ -136,64 +132,63 @@ class RAGService:
             logger.warning("No chunks found — returning FALLBACK.")
             return FALLBACK
 
-        # ── Stage 3: Heuristic Rerank → top-5 ────────────────────────────────
+        # ── Stage 3: Diversity + Heuristic Rerank ─────────────────────────────
         try:
-            top_chunks = _heuristic_rerank(chunks, clinical_query, top_k=_RERANK_TOP_K)
+            diverse = _dedupe_by_protocol(chunks)
+            top_chunks = _heuristic_rerank(diverse, clinical_query, top_k=_RERANK_TOP_K)
         except Exception as exc:
             logger.warning("Stage 3 (rerank) failed: %s — using raw top-5.", exc)
             top_chunks = chunks[:_RERANK_TOP_K]
 
+        # Log top chunks for debugging
+        context_icds: set[str] = set()
         for c in top_chunks:
+            for code in (c.icd_codes or []):
+                context_icds.add((code or "").strip().upper())
             logger.info(
-                "TOP chunk: pid=%s title=%s dist=%.4f icd=%s text=%r",
-                c.protocol_id, c.title, c.distance,
-                (c.icd_codes or [])[:10],
-                (c.text or "")[:140],
+                "  ctx | pid=%-14s dist=%.3f icd=%-20s title=%s",
+                c.protocol_id, c.distance,
+                str((c.icd_codes or [])[:3]), (c.title or "")[:50],
             )
 
         # ── Stage 4: LLM Generation ───────────────────────────────────────────
         try:
             messages = build_messages(symptoms, top_chunks)
             raw = await self.connector.complete(messages)
+            logger.info("Stage 4 LLM raw: %s", raw[:300])
+
             diagnoses = parse_llm_response(raw)
 
-            def norm(code: str) -> str:
+            if not diagnoses:
+                logger.warning("LLM returned empty list — context ICD fallback.")
+                cnt = Counter(
+                    (c or "").strip().upper()
+                    for ch in top_chunks for c in (ch.icd_codes or [])
+                )
+                top_codes = [c for c, _ in cnt.most_common(3)]
+                return [
+                    DiagnosisItem(rank=i + 1, diagnosis="(from context)",
+                                  icd10_code=top_codes[i], explanation="")
+                    for i in range(min(3, len(top_codes)))
+                ] or FALLBACK
+
+            # Soft post-filter: log mismatches, do NOT remove predictions
+            def _norm(code: str) -> str:
                 return (code or "").strip().upper().replace(" ", "")
 
-            allowed = {norm(code) for ch in top_chunks for code in (ch.icd_codes or [])}
-
-            def is_allowed(pred: str) -> bool:
-                p = norm(pred)
-                if not p:
-                    return False
-                if p in allowed:
-                    return True
-                # prefix match both ways: "E78" ↔ "E78.0"
-                return any(a.startswith(p) or p.startswith(a) for a in allowed)
-
-            filtered: list[DiagnosisItem] = []
             for d in diagnoses:
-                if is_allowed(d.icd10_code):
-                    d.icd10_code = norm(d.icd10_code)
-                    filtered.append(d)
+                p = _norm(d.icd10_code)
+                in_ctx = p in context_icds or any(
+                    a.startswith(p) or p.startswith(a) for a in context_icds
+                )
+                if not in_ctx:
+                    logger.info(
+                        "  LLM predicted %s (%s) — NOT in context ICDs %s",
+                        p, d.diagnosis[:40], sorted(context_icds)[:6],
+                    )
 
-            # если всё отфильтровалось — fallback к топовым ICD из контекста
-            if not filtered:
-                cnt = Counter(norm(c) for ch in top_chunks for c in (ch.icd_codes or []))
-                top = [c for c, _ in cnt.most_common(3)]
-                return [
-                    DiagnosisItem(rank=i + 1, diagnosis="(from context)", icd10_code=top[i], explanation="")
-                    for i in range(min(3, len(top)))
-                ]
-
-            return filtered[:3]
+            return diagnoses[:3]
 
         except Exception as exc:
             logger.warning("Stage 4 (generation) failed: %s — returning FALLBACK.", exc)
             return FALLBACK
-
-        if not diagnoses:
-            logger.warning("LLM returned empty diagnoses — returning FALLBACK.")
-            return FALLBACK
-
-        return diagnoses
