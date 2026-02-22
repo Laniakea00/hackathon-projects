@@ -254,9 +254,11 @@ def bm25_search(query: str, top_k: int = 5) -> list:
             ChunkResult(
                 id=chunk.id,
                 protocol_id=chunk.protocol_id,
-                chunk_index=chunk.id,  # BM25 has no chunk_index; use id
+                chunk_index=chunk.id,
                 text=chunk.text,
                 distance=distance,
+                title=chunk.title,
+                icd_codes=list(chunk.icd_codes),
             )
         )
     return results

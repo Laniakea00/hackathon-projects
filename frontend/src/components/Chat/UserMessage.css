@@ -1,0 +1,16 @@
+.user-message-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 0;
+}
+
+.user-message {
+  max-width: 70%;
+  padding: 12px 16px;
+  background: #2563eb;
+  color: white;
+  border-radius: 18px 18px 4px 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}

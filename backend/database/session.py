@@ -114,15 +114,15 @@ def init_vector_db() -> None:
     from pathlib import Path
 
     import numpy as np
-    from sqlalchemy import insert, text
+    from sqlalchemy import text
 
     logger = logging.getLogger(__name__)
 
-    # ── Guard: skip if already populated ──────────────────────────────────────
+    # ── Guard: skip if chunks table already has data ──────────────────────────
     with engine.connect() as conn:
-        count = conn.execute(text("SELECT COUNT(*) FROM protocols")).scalar()
-    if count and count > 0:
-        logger.info("init_vector_db: %d protocols already in DB — skipping.", count)
+        chunk_count = conn.execute(text("SELECT COUNT(*) FROM protocol_chunks")).scalar()
+    if chunk_count and chunk_count > 0:
+        logger.info("init_vector_db: %d chunks already in DB — skipping.", chunk_count)
         return
 
     # ── Locate cache ───────────────────────────────────────────────────────────
@@ -178,13 +178,20 @@ def init_vector_db() -> None:
         logger.warning("init_vector_db: no valid cached protocols found.")
         return
 
-    # ── Bulk insert (chunks in batches of 500) ─────────────────────────────────
+    # ── Bulk insert with ON CONFLICT DO NOTHING (truly idempotent) ────────────
     BATCH = 500
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    proto_stmt = pg_insert(Protocol).on_conflict_do_nothing(index_elements=["id"])
+    chunk_stmt = pg_insert(ProtocolChunk).on_conflict_do_nothing(
+        constraint="uq_chunk_protocol_index"
+    )
+
     db = SessionLocal()
     try:
-        db.execute(insert(Protocol), protocol_rows)
+        db.execute(proto_stmt, protocol_rows)
         for i in range(0, len(chunk_rows), BATCH):
-            db.execute(insert(ProtocolChunk), chunk_rows[i : i + BATCH])
+            db.execute(chunk_stmt, chunk_rows[i : i + BATCH])
         db.commit()
         logger.info(
             "init_vector_db: inserted %d protocols, %d chunks.",

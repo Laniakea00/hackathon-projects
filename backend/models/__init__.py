@@ -7,13 +7,7 @@ Alembic migrations to ensure every table is registered.
 from backend.models.protocol import EMBEDDING_DIM, Protocol, ProtocolChunk  # noqa: F401
 from backend.models.diagnosis import Diagnosis  # noqa: F401
 from backend.models.user import User, UserRole  # noqa: F401
-from backend.models.chat import (  # noqa: F401
-    CaseStatus,
-    ChatMessage,
-    ClinicalCase,
-    MessageRole,
-    UserCard,
-)
+from backend.models.chat import ChatSession, Message  # noqa: F401
 
 __all__ = [
     "EMBEDDING_DIM",
@@ -22,9 +16,6 @@ __all__ = [
     "Diagnosis",
     "User",
     "UserRole",
-    "CaseStatus",
-    "ChatMessage",
-    "ClinicalCase",
-    "MessageRole",
-    "UserCard",
+    "ChatSession",
+    "Message",
 ]

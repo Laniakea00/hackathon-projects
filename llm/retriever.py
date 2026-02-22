@@ -11,7 +11,7 @@ blocks the asyncio event loop.
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import text
@@ -41,7 +41,9 @@ class ChunkResult:
     protocol_id: str
     chunk_index: int
     text: str
-    distance: float   # lower = more similar (cosine distance ∈ [0, 2])
+    distance: float         # lower = more similar (cosine distance ∈ [0, 2])
+    title: str = ""         # protocol title (from protocols table)
+    icd_codes: list[str] = field(default_factory=list)  # ICD-10 codes for this protocol
 
 
 # ── SQL templates ─────────────────────────────────────────────────────────────
@@ -52,8 +54,15 @@ _BASE_SQL = """
         pc.protocol_id,
         pc.chunk_index,
         pc.text,
-        (pc.embedding <=> CAST(:emb AS vector)) AS distance
+        (pc.embedding <=> CAST(:emb AS vector)) AS distance,
+        COALESCE(p.title, pc.protocol_id)       AS title,
+        (
+            SELECT ARRAY_AGG(d2.icd_code)
+            FROM diagnoses d2
+            WHERE d2.protocol_id = pc.protocol_id
+        ) AS icd_codes
     FROM protocol_chunks pc
+    LEFT JOIN protocols p ON p.id = pc.protocol_id
     WHERE pc.embedding IS NOT NULL
 """
 
@@ -69,13 +78,8 @@ _ORDER_CLAUSE = "    ORDER BY distance ASC\n    LIMIT :top_k"
 
 
 def _build_search_sql(icd_codes: list[str] | None) -> tuple[text, dict]:
-    """Construct the parameterised search SQL and bind parameter dict.
-
-    ICD codes are passed as named parameters (``:code_0``, ``:code_1``, …)
-    to avoid any risk of SQL injection.
-    """
+    """Construct the parameterised search SQL and bind parameter dict."""
     params: dict = {}
-
     sql = _BASE_SQL
 
     if icd_codes:
@@ -93,13 +97,7 @@ def _build_search_sql(icd_codes: list[str] | None) -> tuple[text, dict]:
 # ── Retriever class ───────────────────────────────────────────────────────────
 
 class MedicalRetriever:
-    """Async hybrid retriever backed by pgvector.
-
-    Lifecycle
-    ---------
-    Instantiate once at application startup, then call ``initialize()`` to
-    load the embedding model (slow – downloads ~2.5 GB on first run).
-    """
+    """Async hybrid retriever backed by pgvector."""
 
     def __init__(self) -> None:
         self._model: SentenceTransformer | None = None
@@ -140,24 +138,7 @@ class MedicalRetriever:
         top_k: int = 5,
         icd_codes: list[str] | None = None,
     ) -> list[ChunkResult]:
-        """Return the *top_k* most semantically relevant protocol chunks.
-
-        Parameters
-        ----------
-        query_text:
-            Raw symptom/query string from the user.
-        top_k:
-            Maximum number of chunks to return.
-        icd_codes:
-            Optional ICD-10 code list for metadata pre-filtering (hybrid search).
-            Only protocols tagged with at least one of these codes are searched.
-            Codes are sanitised with ``^[A-Z][0-9]`` before use.
-
-        Returns
-        -------
-        List of ChunkResult objects ordered by ascending cosine distance.
-        Returns an empty list when the table is empty or no embeddings exist.
-        """
+        """Return the *top_k* most semantically relevant protocol chunks."""
         embedding = await self._encode_query(query_text)
         emb_literal = self._vec_to_pg_literal(embedding)
 
@@ -175,6 +156,8 @@ class MedicalRetriever:
                 chunk_index=int(row["chunk_index"]),
                 text=str(row["text"]),
                 distance=float(row["distance"]),
+                title=str(row["title"] or ""),
+                icd_codes=list(row["icd_codes"] or []),
             )
             for row in rows
         ]
