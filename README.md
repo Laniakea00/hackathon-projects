@@ -6,22 +6,36 @@ Clinical decision support system. Takes a patient complaint in Russian, retrieve
 
 - **Backend** — FastAPI + SQLAlchemy 2.0 + pgvector (HNSW)
 - **Embedding** — `intfloat/multilingual-e5-large` (1024-dim)
-- **Retrieval** — pgvector cosine search + BM25 → Reciprocal Rank Fusion
+- **Retrieval** — pgvector cosine search + BM25 -> Reciprocal Rank Fusion
 - **LLM** — OpenAI-compatible endpoint (QazCode Hub / any compatible API)
 - **DB** — PostgreSQL 15 + pgvector extension
 - **Frontend** — React + Nginx (port 3000)
 
 ---
 
-## Quick Start (local dev — DB in Docker, backend with uv)
+## Quick Start
 
-### 1. Prerequisites
+### Step 1. Download the data folder
 
-- Docker + Docker Compose
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) package manager
+The protocols corpus and test set are **not stored in the repo**. Download them from Google Drive:
 
-### 2. Install uv
+**[Download data folder from Google Drive](https://drive.google.com/drive/folders/14qThUpugy6GL0Aj1YanQvDi8wuLIdqPF?usp=sharing)**
+
+Extract the downloaded `data/` folder into the **project root** so the layout looks like:
+
+```
+QazCode/
+  data/
+    corpus.jsonl
+    test_set/
+    .embeddings/
+    ...
+  backend/
+  llm/
+  ...
+```
+
+### Step 2. Install uv
 
 **Linux / macOS:**
 ```bash
@@ -33,81 +47,67 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**Or via pip (any OS):**
+**Or via pip:**
 ```bash
 pip install uv
 ```
 
-### 3. Configure environment
-
-Copy the example env file and fill in your LLM credentials:
+### Step 3. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` and set your LLM API key:
 
 ```env
-# PostgreSQL (defaults work for local Docker setup)
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=qazcode
-
-# LLM endpoint (QazCode Hub or any OpenAI-compatible API)
 LLM_BASE_URL=https://hub.qazcode.ai/v1
 LLM_API_KEY=your_api_key_here
 LLM_MODEL=oss-120b
 ```
 
-### 4. Start the database
+The PostgreSQL defaults (`postgres/postgres/qazcode`) work out of the box with Docker.
+
+### Step 4. Start the database
 
 ```bash
 docker compose up db -d
 ```
 
-Wait for it to become healthy (usually ~5 seconds):
+Wait until healthy (~5 seconds):
 
 ```bash
 docker compose ps
 ```
 
-### 5. Install Python dependencies
+### Step 5. Install Python dependencies
 
 ```bash
 uv sync
 ```
 
-This creates `.venv/` and installs all dependencies including `sentence-transformers`, `torch`, `pgvector`, etc.
-
-### 6. Bootstrap the database (first run only)
-
-Populates the DB with protocols and builds the HNSW vector index:
+### Step 6. Start the backend
 
 ```bash
-uv run python scripts/bootstrap.py
+uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-This is safe to run multiple times — it skips if the DB is already populated.
+On first run the backend will:
+1. Create the DB schema and load protocols from `data/corpus.jsonl`
+2. Compute and cache embeddings into `data/.embeddings/` (takes a few minutes the first time)
+3. Build the HNSW vector index
 
-### 7. Start the backend
+Wait until you see **`QazCode RAG server is ready.`** in the logs before proceeding.
+
+### Step 7. Run evaluation
+
+Open a second terminal:
 
 ```bash
-uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+uv run python evaluate.py
 ```
 
-The server loads the embedding model on startup (~30 seconds first time, cached after).
-
-### 8. Verify
-
-```bash
-curl http://localhost:8000/health
-# → {"status": "ok"}
-
-curl -X POST http://localhost:8000/diagnose \
-  -H "Content-Type: application/json" \
-  -d '{"symptoms": "боль в правом подреберье, тошнота, температура 38.2"}'
-```
+Results are saved to `data/evals/`.
 
 ---
 
@@ -119,13 +119,13 @@ Runs DB + backend + frontend together:
 docker compose up --build
 ```
 
-| Service  | URL                    |
-|----------|------------------------|
-| Frontend | http://localhost:3000  |
-| Backend  | http://localhost:8000  |
-| DB       | localhost:5432         |
+| Service  | URL                   |
+|----------|-----------------------|
+| Frontend | http://localhost:3000 |
+| Backend  | http://localhost:8000 |
+| DB       | localhost:5432        |
 
-> **Note:** First `docker compose up --build` downloads ~4 GB of Python packages (torch + CUDA libs). Subsequent builds use the Docker layer cache.
+> **Note:** First build downloads ~4 GB of Python packages (torch + CUDA libs). Subsequent builds use the Docker layer cache.
 
 ---
 
@@ -135,7 +135,7 @@ docker compose up --build
 
 ```json
 {
-  "symptoms": "описание жалоб пациента на русском языке"
+  "symptoms": "opisanie zhalob patsiyenta"
 }
 ```
 
@@ -146,31 +146,17 @@ docker compose up --build
   "diagnoses": [
     {
       "rank": 1,
-      "diagnosis": "Острый холецистит",
+      "diagnosis": "Ostryy kholyetsistit",
       "icd10_code": "K81.0",
-      "explanation": "Боль в правом подреберье, усиливающаяся после еды..."
-    },
-    { "rank": 2, "...": "..." },
-    { "rank": 3, "...": "..." }
+      "explanation": "..."
+    }
   ]
 }
 ```
 
 ### `GET /health`
 
-Returns `{"status": "ok"}` when the server is up.
-
----
-
-## Evaluation
-
-Run against the test set:
-
-```bash
-uv run python evaluate.py
-```
-
-Results are saved to `data/evals/<submission_name>.jsonl` and `data/evals/<submission_name>_metrics.json`.
+Returns `{"status": "ok"}` when the server is ready.
 
 ---
 
