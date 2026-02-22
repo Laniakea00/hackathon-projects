@@ -14,6 +14,9 @@ import re
 # DiagnosisItem lives in the schemas package; re-export for backward compat.
 from backend.schemas.diagnose import DiagnosisItem  # noqa: F401
 
+# Valid ICD-10 code pattern: letter + 2 digits, optional dot + 1-2 alphanums
+_ICD_RE = re.compile(r"^[A-Z][0-9]{2}(\.[0-9A-Za-z]{1,2})?$")
+
 
 # Returned when no diagnoses could be parsed or the retriever found nothing.
 FALLBACK: list[DiagnosisItem] = [
@@ -79,11 +82,15 @@ def parse_llm_response(raw: str) -> list[DiagnosisItem]:
         if not isinstance(item, dict):
             continue
         try:
+            raw_code = (item.get("icd10_code") or "").strip().upper().replace(" ", "")
+            # Reject dashes and anything that doesn't look like an ICD-10 code
+            if not _ICD_RE.match(raw_code):
+                continue
             result.append(
                 DiagnosisItem(
                     rank=item.get("rank", i),
                     diagnosis=item.get("diagnosis", ""),
-                    icd10_code=item.get("icd10_code", ""),
+                    icd10_code=raw_code,
                     explanation=item.get("explanation", ""),
                 )
             )

@@ -106,7 +106,9 @@ def create_hnsw_index() -> None:
 def init_vector_db() -> None:
     """Load embeddings from data/.embeddings/ into DB if tables are empty.
 
-    Idempotent: exits immediately when protocols table already has rows.
+    Idempotent: exits immediately when protocol_chunks table already has rows.
+    Also reads data/raw_protocols/protocols_corpus.jsonl (if present) to
+    populate protocols.title and the diagnoses table with ICD-10 codes.
     Call from the FastAPI lifespan via asyncio.to_thread() after init_db().
     """
     import json
@@ -125,8 +127,9 @@ def init_vector_db() -> None:
         logger.info("init_vector_db: %d chunks already in DB — skipping.", chunk_count)
         return
 
-    # ── Locate cache ───────────────────────────────────────────────────────────
-    cache_dir = Path(__file__).resolve().parent.parent.parent / "data" / ".embeddings"
+    # ── Locate embedding cache ─────────────────────────────────────────────────
+    root = Path(__file__).resolve().parent.parent.parent
+    cache_dir = root / "data" / ".embeddings"
     if not cache_dir.exists():
         logger.info("init_vector_db: cache dir %s not found — skipping.", cache_dir)
         return
@@ -138,10 +141,42 @@ def init_vector_db() -> None:
 
     logger.info("init_vector_db: found %d cached protocols — loading …", len(npy_files))
 
+    # ── Load metadata from corpus JSONL (title + ICD codes) ──────────────────
+    # Without this, protocols.title = protocol_id and diagnoses table stays
+    # empty, leaving the LLM with no ICD context to ground its answers.
+    meta: dict[str, dict] = {}
+    corpus_path = root / "data" / "raw_protocols" / "protocols_corpus.jsonl"
+    if corpus_path.exists():
+        logger.info("init_vector_db: reading metadata from %s …", corpus_path.name)
+        with open(corpus_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                    pid = rec.get("protocol_id", "")
+                    if pid:
+                        meta[pid] = {
+                            "title": (rec.get("title") or "").strip(),
+                            "icd_codes": [
+                                c.strip() for c in rec.get("icd_codes", []) if c.strip()
+                            ],
+                        }
+                except Exception:
+                    pass
+        logger.info("init_vector_db: metadata loaded for %d protocols.", len(meta))
+    else:
+        logger.warning(
+            "init_vector_db: corpus not found at %s — titles and ICD codes will be empty.",
+            corpus_path,
+        )
+
     # ── Build row lists ────────────────────────────────────────────────────────
     from backend.models.protocol import Protocol, ProtocolChunk
 
     protocol_rows: list[dict] = []
+    diagnosis_rows: list[dict] = []
     chunk_rows: list[dict] = []
 
     for npy_path in npy_files:
@@ -158,15 +193,21 @@ def init_vector_db() -> None:
             logger.warning("init_vector_db: cannot read %s — %s", safe_id, exc)
             continue
 
+        m = meta.get(safe_id, {})
+        title = m.get("title") or safe_id   # fall back to id if title missing
+
         protocol_rows.append({
             "id": safe_id,
             "source_file": "",
-            "title": safe_id,
+            "title": title,
             "full_text": "",
         })
 
+        for icd_code in m.get("icd_codes", []):
+            diagnosis_rows.append({"protocol_id": safe_id, "icd_code": icd_code})
+
         for chunk_idx, (chunk_text, emb) in enumerate(zip(chunks, embeddings)):
-            clean = chunk_text.replace("\x00", "")   # strip NUL bytes
+            clean = chunk_text.replace("\x00", "")
             chunk_rows.append({
                 "protocol_id": safe_id,
                 "chunk_index": chunk_idx,
@@ -181,8 +222,12 @@ def init_vector_db() -> None:
     # ── Bulk insert with ON CONFLICT DO NOTHING (truly idempotent) ────────────
     BATCH = 500
     from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from backend.models.diagnosis import Diagnosis
 
     proto_stmt = pg_insert(Protocol).on_conflict_do_nothing(index_elements=["id"])
+    diag_stmt = pg_insert(Diagnosis).on_conflict_do_nothing(
+        constraint="uq_diagnosis_protocol_code"
+    )
     chunk_stmt = pg_insert(ProtocolChunk).on_conflict_do_nothing(
         constraint="uq_chunk_protocol_index"
     )
@@ -190,12 +235,14 @@ def init_vector_db() -> None:
     db = SessionLocal()
     try:
         db.execute(proto_stmt, protocol_rows)
+        for i in range(0, len(diagnosis_rows), BATCH):
+            db.execute(diag_stmt, diagnosis_rows[i : i + BATCH])
         for i in range(0, len(chunk_rows), BATCH):
             db.execute(chunk_stmt, chunk_rows[i : i + BATCH])
         db.commit()
         logger.info(
-            "init_vector_db: inserted %d protocols, %d chunks.",
-            len(protocol_rows), len(chunk_rows),
+            "init_vector_db: inserted %d protocols, %d diagnoses, %d chunks.",
+            len(protocol_rows), len(diagnosis_rows), len(chunk_rows),
         )
     except Exception:
         db.rollback()

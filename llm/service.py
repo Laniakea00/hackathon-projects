@@ -3,7 +3,7 @@
 Pipeline
 --------
 1. Query Rewrite  : LLM extracts clinical entities from the raw complaint.
-2. Vector Search  : top-12 chunks via pgvector (or BM25 fallback).
+2. Vector Search  : pgvector + BM25 run in parallel; results fused via RRF.
 3. Diversity      : keep best chunk per protocol, then heuristic rerank → top-5.
 4. Generation     : LLM produces ranked diagnoses from context.
    Post-filter    : soft — logs mismatches but does NOT remove LLM predictions.
@@ -24,7 +24,12 @@ from backend.schemas.diagnose import DiagnosisItem
 logger = logging.getLogger(__name__)
 
 _RERANK_TOP_K = 5
-_SEARCH_TOP_K = 12
+_SEARCH_TOP_K = 30          # broader initial pool for both pgvector and BM25
+_RRF_K = 60                 # standard RRF constant
+# Cosine distance threshold: chunks farther than this are likely irrelevant.
+# Kept as a soft filter — if too few pass, we keep at least _MIN_CHUNKS_AFTER_FILTER.
+_DISTANCE_THRESHOLD = 0.45
+_MIN_CHUNKS_AFTER_FILTER = 5
 
 
 # ── Diversity filter ───────────────────────────────────────────────────────────
@@ -40,6 +45,48 @@ def _dedupe_by_protocol(chunks: list[ChunkResult]) -> list[ChunkResult]:
     return result
 
 
+# ── Reciprocal Rank Fusion ────────────────────────────────────────────────────
+
+def _rrf_fuse(
+    vec_chunks: list[ChunkResult],
+    bm25_chunks: list[ChunkResult],
+    k: int = _RRF_K,
+) -> list[ChunkResult]:
+    """Fuse pgvector and BM25 results via Reciprocal Rank Fusion.
+
+    Each pgvector chunk is scored by its vector rank plus the best BM25 rank
+    of its protocol.  BM25-only protocols (not retrieved by pgvector at all)
+    are appended at the tail so they can still surface via the reranker.
+
+    score = 1/(k + vec_rank) + 1/(k + bm25_proto_rank)
+    """
+    # Best BM25 rank per protocol_id (1-indexed)
+    bm25_proto_rank: dict[str, int] = {}
+    for rank, chunk in enumerate(bm25_chunks, start=1):
+        if chunk.protocol_id not in bm25_proto_rank:
+            bm25_proto_rank[chunk.protocol_id] = rank
+
+    bm25_miss = len(bm25_chunks) + 1
+    vec_protos: set[str] = set()
+
+    scored: list[tuple[float, ChunkResult]] = []
+    for vec_rank, chunk in enumerate(vec_chunks, start=1):
+        vec_protos.add(chunk.protocol_id)
+        bm25_rank = bm25_proto_rank.get(chunk.protocol_id, bm25_miss)
+        rrf = 1.0 / (k + vec_rank) + 1.0 / (k + bm25_rank)
+        scored.append((rrf, chunk))
+
+    # Append BM25-only chunks (protocols absent from pgvector results)
+    vec_miss = len(vec_chunks) + 1
+    for bm25_rank, chunk in enumerate(bm25_chunks, start=1):
+        if chunk.protocol_id not in vec_protos:
+            rrf = 1.0 / (k + vec_miss) + 1.0 / (k + bm25_rank)
+            scored.append((rrf, chunk))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [chunk for _, chunk in scored]
+
+
 # ── Heuristic reranker ────────────────────────────────────────────────────────
 
 def _heuristic_rerank(
@@ -47,44 +94,60 @@ def _heuristic_rerank(
     query: str,
     top_k: int = _RERANK_TOP_K,
 ) -> list[ChunkResult]:
-    """Re-score chunks combining vector distance + ICD frequency + title match.
+    """Re-score chunks by vector distance + query keyword overlap in chunk text.
 
-    Scoring:
-    - Base  : 1 - distance          (higher = closer)
-    - ICD   : codes frequent in top chunks get boost (weight 0.2)
-    - Title : +0.15 if title word appears in query; -0.08 if title has words
-              but NONE match (penalises generic protocols retrieved for unrelated
-              queries — e.g. cholecystitis for a bone-tumour case)
+    Why the old approach was removed:
+    - ICD frequency boost: rewarded having many protocols with the SAME code
+      (e.g. 5× C53 → each got max +0.20, filling all context slots with cancer
+      protocols for a cardiac query).
+    - Title boost/penalty: all corpus titles are "Одобрен"/"Рекомендовано" —
+      those words never appear in medical queries → uniform -0.08 penalty with
+      zero discriminative power.
+
+    New scoring:
+    - Base      : 1 - distance          (primary signal)
+    - Text hit  : +up to 0.20 for query keywords found in chunk text
+                  (complementary token-level signal to dense vector distance)
+
+    After scoring, an ICD-family diversity cap limits each 3-char ICD prefix
+    (e.g. "C53", "F10") to at most 2 slots in the final top-k context, so a
+    cluster of same-diagnosis protocols can never monopolise the LLM context.
     """
     if not chunks:
         return chunks
 
-    icd_freq: Counter = Counter()
-    for chunk in chunks:
-        for code in chunk.icd_codes:
-            icd_freq[code] += 1
-    max_freq = max(icd_freq.values()) if icd_freq else 1
-
     query_lower = query.lower()
-    scored: list[tuple[float, ChunkResult]] = []
+    query_words = {w for w in query_lower.split() if len(w) > 4}
 
+    scored: list[tuple[float, ChunkResult]] = []
     for chunk in chunks:
         base = 1.0 - min(chunk.distance, 1.0)
 
-        icd_boost = 0.0
-        if chunk.icd_codes:
-            icd_boost = max(icd_freq.get(c, 0) / max_freq for c in chunk.icd_codes) * 0.20
+        text_boost = 0.0
+        if query_words:
+            chunk_text_lower = (chunk.text or "").lower()
+            hits = sum(1 for w in query_words if w in chunk_text_lower)
+            text_boost = (hits / len(query_words)) * 0.20
 
-        title_words = [w for w in (chunk.title or "").lower().split() if len(w) > 4]
-        if title_words:
-            title_boost = 0.15 if any(w in query_lower for w in title_words) else -0.08
-        else:
-            title_boost = 0.0
-
-        scored.append((base + icd_boost + title_boost, chunk))
+        scored.append((base + text_boost, chunk))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [chunk for _, chunk in scored[:top_k]]
+
+    # ICD-family diversity cap: max 2 protocols per 3-char ICD prefix
+    family_count: Counter = Counter()
+    result: list[ChunkResult] = []
+    for _, chunk in scored:
+        families = {c[:3] for c in (chunk.icd_codes or []) if len(c) >= 3}
+        # Accept the chunk if at least one of its ICD families still has room,
+        # or if it carries no ICD codes at all (keep it for its text value).
+        if not families or any(family_count[f] < 2 for f in families):
+            result.append(chunk)
+            for f in families:
+                family_count[f] += 1
+        if len(result) >= top_k:
+            break
+
+    return result
 
 
 # ── RAG service ───────────────────────────────────────────────────────────────
@@ -114,28 +177,54 @@ class RAGService:
             logger.warning("Stage 1 (rewrite) failed: %s — using original.", exc)
             clinical_query = symptoms
 
-        # ── Stage 2: Vector retrieval ──────────────────────────────────────────
+        # ── Stage 2: Parallel pgvector + BM25 → RRF fusion ────────────────────
         chunks: list[ChunkResult] = []
+        vec_chunks: list[ChunkResult] = []
+        bm25_chunks: list[ChunkResult] = []
         try:
-            chunks = await self.retriever.get_relevant_chunks(
+            _vec_task = self.retriever.get_relevant_chunks(
                 clinical_query, top_k=top_k, icd_codes=icd_filter
             )
-            logger.info("Stage 2 (pgvector): %d chunks retrieved.", len(chunks))
-        except Exception as exc:
-            logger.warning("Stage 2 (pgvector) failed: %s", exc)
+            _bm25_task = asyncio.to_thread(bm25_search, clinical_query, top_k)
+            _vec_result, _bm25_result = await asyncio.gather(
+                _vec_task, _bm25_task, return_exceptions=True
+            )
+            if isinstance(_vec_result, Exception):
+                logger.warning("Stage 2 (pgvector) failed: %s", _vec_result)
+            else:
+                vec_chunks = _vec_result
 
-        # ── Stage 2b: BM25 fallback ────────────────────────────────────────────
-        if not chunks:
-            logger.info("pgvector empty — falling back to BM25.")
-            try:
-                chunks = await asyncio.to_thread(bm25_search, clinical_query, top_k)
-                logger.info("Stage 2b (BM25): %d chunks retrieved.", len(chunks))
-            except Exception as exc:
-                logger.warning("Stage 2b (BM25) failed: %s", exc)
+            if isinstance(_bm25_result, Exception):
+                logger.warning("Stage 2 (BM25) failed: %s", _bm25_result)
+            else:
+                bm25_chunks = _bm25_result
+
+            logger.info(
+                "Stage 2 | pgvector: %d  BM25: %d chunks.",
+                len(vec_chunks), len(bm25_chunks),
+            )
+            chunks = _rrf_fuse(vec_chunks, bm25_chunks)
+            logger.info("Stage 2 (RRF fused): %d chunks.", len(chunks))
+        except Exception as exc:
+            logger.warning("Stage 2 retrieval failed: %s", exc)
 
         if not chunks:
             logger.warning("No chunks found — returning FALLBACK.")
             return FALLBACK
+
+        # ── Stage 2c: Distance threshold filter ───────────────────────────
+        close_chunks = [c for c in chunks if c.distance <= _DISTANCE_THRESHOLD]
+        if len(close_chunks) >= _MIN_CHUNKS_AFTER_FILTER:
+            logger.info(
+                "Distance filter: kept %d/%d chunks (threshold=%.2f).",
+                len(close_chunks), len(chunks), _DISTANCE_THRESHOLD,
+            )
+            chunks = close_chunks
+        else:
+            logger.info(
+                "Distance filter: only %d chunks below threshold — keeping all %d.",
+                len(close_chunks), len(chunks),
+            )
 
         # ── Stage 3: Diversity + Heuristic Rerank ─────────────────────────────
         try:
