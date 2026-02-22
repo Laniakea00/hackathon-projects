@@ -51,22 +51,22 @@ services:
 
   # ── Bootstrap (optional — only needed if data/.embeddings/ is missing) ─────
   # Usage: docker compose --profile ingest up bootstrap
-  bootstrap:
-    profiles: ["ingest"]
-    build: .
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: >-
-        postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-qazcode}
-      LLM_BASE_URL: ${LLM_BASE_URL:-https://hub.qazcode.ai/v1}
-      LLM_API_KEY:  ${LLM_API_KEY:-}
-      LLM_MODEL:    ${LLM_MODEL:-oss-120b}
-    volumes:
-      - ./data:/app/data
-    command: ["uv", "run", "python", "scripts/bootstrap.py"]
-    restart: "no"
+#  bootstrap:
+#    profiles: ["ingest"]
+#    build: .
+#    depends_on:
+#      db:
+#        condition: service_healthy
+#    environment:
+#      DATABASE_URL: >-
+#        postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-qazcode}
+#      LLM_BASE_URL: ${LLM_BASE_URL:-https://hub.qazcode.ai/v1}
+#      LLM_API_KEY:  ${LLM_API_KEY:-}
+#      LLM_MODEL:    ${LLM_MODEL:-oss-120b}
+#    volumes:
+#      - ./data:/app/data
+#    command: ["uv", "run", "python", "scripts/bootstrap.py"]
+#    restart: "no"
 
 volumes:
   pgdata:

@@ -65,30 +65,36 @@ _BASE_SQL = """
     LEFT JOIN protocols p ON p.id = pc.protocol_id
     WHERE pc.embedding IS NOT NULL
 """
-
 _ICD_FILTER_CLAUSE = """
-      AND pc.protocol_id IN (
-          SELECT DISTINCT d.protocol_id
-          FROM diagnoses d
-          WHERE d.icd_code IN ({placeholders})
-      )
+  AND EXISTS (
+    SELECT 1
+    FROM diagnoses d
+    WHERE d.protocol_id = pc.protocol_id
+      AND ({conditions})
+  )
 """
-
 _ORDER_CLAUSE = "    ORDER BY distance ASC\n    LIMIT :top_k"
 
+def _normalize_icd(code: str) -> str:
+    return code.strip().upper().replace(" ", "")
 
 def _build_search_sql(icd_codes: list[str] | None) -> tuple[text, dict]:
-    """Construct the parameterised search SQL and bind parameter dict."""
     params: dict = {}
     sql = _BASE_SQL
 
     if icd_codes:
-        safe = _sanitize_icd_codes(icd_codes)
+        safe = [_normalize_icd(c) for c in icd_codes]
+        safe = [c for c in safe if _ICD_RE.match(c)]
+
         if safe:
-            placeholders = ", ".join(f":code_{i}" for i in range(len(safe)))
-            sql += _ICD_FILTER_CLAUSE.format(placeholders=placeholders)
+            conditions = []
             for i, code in enumerate(safe):
                 params[f"code_{i}"] = code
+                conditions.append(
+                    f"(d.icd_code = :code_{i} OR d.icd_code LIKE (:code_{i} || '%'))"
+                )
+
+            sql += _ICD_FILTER_CLAUSE.format(conditions=" OR ".join(conditions))
 
     sql += _ORDER_CLAUSE
     return text(sql), params
@@ -112,15 +118,16 @@ class MedicalRetriever:
         logger.info("Embedding model ready.")
 
     async def _encode_query(self, query_text: str) -> list[float]:
-        """Encode *query_text* with the mandatory e5 'query: ' prefix."""
         if self._model is None:
             raise RuntimeError("Retriever not initialised – call initialize() first.")
+
+        q = (query_text or "").replace("\x00", "").strip()
 
         loop = asyncio.get_running_loop()
         vec = await loop.run_in_executor(
             None,
             lambda: self._model.encode(  # type: ignore[union-attr]
-                f"query: {query_text}",
+                f"query: {q}",
                 normalize_embeddings=True,
                 show_progress_bar=False,
             ),

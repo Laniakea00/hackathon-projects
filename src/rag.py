@@ -142,3 +142,49 @@ class BM25Index:
         for s, i in scored[:top_k]:
             out.append((s, self.chunks[i]))
         return out
+
+    def search_diverse(
+        self,
+        query: str,
+        top_k: int = 6,
+        per_protocol: int = 1,
+        oversample: int = 50,
+    ) -> List[Tuple[float, Chunk]]:
+        """
+        BM25 retrieval + diversity constraint:
+        - не больше per_protocol чанков из одного protocol_id
+        - сначала считаем много кандидатов (oversample), потом фильтруем
+        """
+        q = tokenize(query)
+        if not q:
+            return []
+
+        scored: List[Tuple[float, int]] = []
+        for i in range(len(self.chunks)):
+            s = self.score(q, i)
+            if s > 0:
+                scored.append((s, i))
+
+        if not scored:
+            return []
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # берём больше кандидатов, чтобы было что фильтровать
+        scored = scored[: max(top_k * 5, oversample)]
+
+        out: List[Tuple[float, Chunk]] = []
+        per_pid_count: Dict[str, int] = {}
+
+        for s, i in scored:
+            ch = self.chunks[i]
+            pid = ch.protocol_id or ""
+            cnt = per_pid_count.get(pid, 0)
+            if cnt >= per_protocol:
+                continue
+            per_pid_count[pid] = cnt + 1
+            out.append((s, ch))
+            if len(out) >= top_k:
+                break
+
+        return out

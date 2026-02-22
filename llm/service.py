@@ -58,13 +58,14 @@ def _heuristic_rerank(
     for chunk in chunks:
         base = 1.0 - min(chunk.distance, 1.0)
 
-        icd_boost = (
-            sum(icd_freq[c] / max_freq for c in chunk.icd_codes) * 0.3
-            if chunk.icd_codes else 0.0
-        )
+        # нормализуем ICD boost: чем чаще коды протокола встречаются в top-12, тем выше
+        icd_boost = 0.0
+        if chunk.icd_codes:
+            # берем max по кодам протокола
+            icd_boost = max(icd_freq.get(code, 0) / max_freq for code in chunk.icd_codes) * 0.30
 
         title_words = [w for w in (chunk.title or "").lower().split() if len(w) > 4]
-        title_boost = 0.1 if any(w in query_lower for w in title_words) else 0.0
+        title_boost = 0.10 if any(w in query_lower for w in title_words) else 0.0
 
         scored.append((base + icd_boost + title_boost, chunk))
 
@@ -137,16 +138,56 @@ class RAGService:
 
         # ── Stage 3: Heuristic Rerank → top-5 ────────────────────────────────
         try:
-            top_chunks = _heuristic_rerank(chunks, symptoms, top_k=_RERANK_TOP_K)
+            top_chunks = _heuristic_rerank(chunks, clinical_query, top_k=_RERANK_TOP_K)
         except Exception as exc:
             logger.warning("Stage 3 (rerank) failed: %s — using raw top-5.", exc)
             top_chunks = chunks[:_RERANK_TOP_K]
+
+        for c in top_chunks:
+            logger.info(
+                "TOP chunk: pid=%s title=%s dist=%.4f icd=%s text=%r",
+                c.protocol_id, c.title, c.distance,
+                (c.icd_codes or [])[:10],
+                (c.text or "")[:140],
+            )
 
         # ── Stage 4: LLM Generation ───────────────────────────────────────────
         try:
             messages = build_messages(symptoms, top_chunks)
             raw = await self.connector.complete(messages)
             diagnoses = parse_llm_response(raw)
+
+            def norm(code: str) -> str:
+                return (code or "").strip().upper().replace(" ", "")
+
+            allowed = {norm(code) for ch in top_chunks for code in (ch.icd_codes or [])}
+
+            def is_allowed(pred: str) -> bool:
+                p = norm(pred)
+                if not p:
+                    return False
+                if p in allowed:
+                    return True
+                # prefix match both ways: "E78" ↔ "E78.0"
+                return any(a.startswith(p) or p.startswith(a) for a in allowed)
+
+            filtered: list[DiagnosisItem] = []
+            for d in diagnoses:
+                if is_allowed(d.icd10_code):
+                    d.icd10_code = norm(d.icd10_code)
+                    filtered.append(d)
+
+            # если всё отфильтровалось — fallback к топовым ICD из контекста
+            if not filtered:
+                cnt = Counter(norm(c) for ch in top_chunks for c in (ch.icd_codes or []))
+                top = [c for c, _ in cnt.most_common(3)]
+                return [
+                    DiagnosisItem(rank=i + 1, diagnosis="(from context)", icd10_code=top[i], explanation="")
+                    for i in range(min(3, len(top)))
+                ]
+
+            return filtered[:3]
+
         except Exception as exc:
             logger.warning("Stage 4 (generation) failed: %s — returning FALLBACK.", exc)
             return FALLBACK
