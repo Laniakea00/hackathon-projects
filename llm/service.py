@@ -50,9 +50,11 @@ def _heuristic_rerank(
     """Re-score chunks combining vector distance + ICD frequency + title match.
 
     Scoring:
-    - Base  : 1 - distance         (higher = closer)
-    - ICD   : codes frequent in top chunks get boost (weight 0.2, reduced from 0.3)
-    - Title : bonus when title word appears in query (weight 0.1)
+    - Base  : 1 - distance          (higher = closer)
+    - ICD   : codes frequent in top chunks get boost (weight 0.2)
+    - Title : +0.15 if title word appears in query; -0.08 if title has words
+              but NONE match (penalises generic protocols retrieved for unrelated
+              queries — e.g. cholecystitis for a bone-tumour case)
     """
     if not chunks:
         return chunks
@@ -74,7 +76,10 @@ def _heuristic_rerank(
             icd_boost = max(icd_freq.get(c, 0) / max_freq for c in chunk.icd_codes) * 0.20
 
         title_words = [w for w in (chunk.title or "").lower().split() if len(w) > 4]
-        title_boost = 0.10 if any(w in query_lower for w in title_words) else 0.0
+        if title_words:
+            title_boost = 0.15 if any(w in query_lower for w in title_words) else -0.08
+        else:
+            title_boost = 0.0
 
         scored.append((base + icd_boost + title_boost, chunk))
 
