@@ -18,8 +18,11 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Bootstrap (fast first-boot ingest) ────────────────────────────────────
+  # ── Bootstrap (optional: only if data/.embeddings/ cache is missing) ────────
+  # Normal start: docker compose up -d          (skips bootstrap)
+  # Force ingest:  docker compose --profile ingest up bootstrap
   bootstrap:
+    profiles: ["ingest"]
     build: .
     depends_on:
       db:
@@ -45,14 +48,23 @@ services:
     environment:
       DATABASE_URL: >-
         postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-qazcode}
+      ASYNC_DATABASE_URL: >-
+        postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-qazcode}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://hub.qazcode.ai/v1}
       LLM_API_KEY:  ${LLM_API_KEY:-}
       LLM_MODEL:    ${LLM_MODEL:-oss-120b}
+      JWT_SECRET:   ${JWT_SECRET:-change-me-in-production}
+      # Offline mode: don't check HuggingFace for updates
+      TRANSFORMERS_OFFLINE: "1"
+      HF_DATASETS_OFFLINE: "1"
     ports:
       - "8000:8000"
     volumes:
-      # Mount data directory so the ingest script can read corpus files
       - ./data:/app/data
+      - ./backend:/app/backend
+      - ./llm:/app/llm
+      # Mount host HF cache so the model is never re-downloaded
+      - ${HF_CACHE:-C:/Users/230701/.cache/huggingface}:/root/.cache/huggingface
 
 volumes:
   pgdata:
