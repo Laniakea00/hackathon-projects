@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Excalidraw, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw";
-import type { ExcalidrawElement } from "@excalidraw/excalidraw/types";
+import { Excalidraw } from "@excalidraw/excalidraw";
 import { ParticipantsPanel } from "./src/components/ParticipantsPanel";
 import { useCollabClient } from "./src/hooks/useCollabClient";
 import type { Participant } from "./src/types/collab";
@@ -10,7 +9,7 @@ const randomColor = () =>
     Math.floor(Math.random() * 6)
   ];
 
-const toSimple = (els: readonly ExcalidrawElement[]) =>
+const toSimple = (els: readonly any[]) =>
   els
     .filter((e) => !e.isDeleted)
     .map((e) => ({
@@ -24,7 +23,7 @@ const toSimple = (els: readonly ExcalidrawElement[]) =>
       color: (e as any).strokeColor || "#000",
     }));
 
-const fromSimple = (arr: any[]): ExcalidrawElement[] =>
+const fromSimple = (arr: any[]): any[] =>
   arr.map((o) => ({
     id: o.id,
     type: o.type,
@@ -72,7 +71,7 @@ export function CollabRoom({ roomId }: { roomId: string }) {
     [],
   );
 
-  const apiRef = useRef<ExcalidrawImperativeAPI>(null);
+  const apiRef = useRef<any>(null);
   const [initialData, setInitialData] = useState<any>(null);
 
   const { participants, send, updateCursor } = useCollabClient(roomId, self, (msg) => {
@@ -82,7 +81,7 @@ export function CollabRoom({ roomId }: { roomId: string }) {
     }
   });
 
-  const handleChange = (elements: readonly ExcalidrawElement[]) => {
+  const handleChange = (elements: readonly any[]) => {
     send({
       event: "sync_scene",
       room_id: roomId,
@@ -111,8 +110,10 @@ export function CollabRoom({ roomId }: { roomId: string }) {
           <span style={{ fontSize: 12, color: "#555" }}>{inviteLink}</span>
         </div>
         <Excalidraw
-          ref={apiRef}
           initialData={initialData || undefined}
+          onMount={(payload: any) => {
+            apiRef.current = payload?.excalidrawAPI || null;
+          }}
           onChange={handleChange}
           UIOptions={{
             canvasActions: {
@@ -125,7 +126,6 @@ export function CollabRoom({ roomId }: { roomId: string }) {
             },
           }}
           renderTopRightUI={() => null}
-          renderFooter={() => null}
         />
       </div>
       <ParticipantsPanel participants={participants} />
