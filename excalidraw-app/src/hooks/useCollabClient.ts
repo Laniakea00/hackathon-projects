@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { CollabEvent, Participant, Cursor } from "../types/collab";
 
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+const runtimeWs = () => {
+  const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
+  if (envUrl) return envUrl;
+  const { protocol, hostname } = window.location;
+  const wsProto = protocol === "https:" ? "wss:" : "ws:";
+  return `${wsProto}//${hostname}:8010/ws`;
+};
 
 export function useCollabClient(roomId: string, self: Participant, onEvent?: (msg: any) => void) {
   const [participants, setParticipants] = useState<Participant[]>([self]);
@@ -9,7 +15,7 @@ export function useCollabClient(roomId: string, self: Participant, onEvent?: (ms
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const ws = new WebSocket(`${WS_URL}/${roomId}?user_id=${self.id}`);
+    const ws = new WebSocket(`${runtimeWs()}/${roomId}?user_id=${self.id}`);
     wsRef.current = ws;
 
     ws.onmessage = (ev) => {
