@@ -136,3 +136,19 @@
     }
   }
 }
+
+.voice-chat-button {
+  border: none;
+  border-radius: var(--border-radius-md);
+  background: var(--color-surface-low);
+  color: var(--color-on-surface);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.voice-chat-error {
+  align-self: center;
+  font-size: 0.75rem;
+  color: var(--color-warning);
+}

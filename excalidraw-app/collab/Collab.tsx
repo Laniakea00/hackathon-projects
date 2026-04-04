@@ -98,6 +98,12 @@ import type {
 export const collabAPIAtom = atom<CollabAPI | null>(null);
 export const isCollaboratingAtom = atom(false);
 export const isOfflineAtom = atom(false);
+export const voiceChatStateAtom = atom({
+  isEnabled: false,
+  isMuted: false,
+  participantCount: 0,
+  error: null as string | null,
+});
 
 interface CollabState {
   errorMessage: string | null;
@@ -123,6 +129,8 @@ export interface CollabAPI {
   getUsername: CollabInstance["getUsername"];
   getActiveRoomLink: CollabInstance["getActiveRoomLink"];
   setCollabError: CollabInstance["setErrorDialog"];
+  toggleVoiceChat: CollabInstance["toggleVoiceChat"];
+  toggleVoiceMute: CollabInstance["toggleVoiceMute"];
 }
 
 interface CollabProps {
@@ -139,6 +147,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   private socketInitializationTimer?: number;
   private lastBroadcastedOrReceivedSceneVersion: number = -1;
   private collaborators = new Map<SocketId, Collaborator>();
+  private localAudioStream: MediaStream | null = null;
+  private voicePeers = new Map<SocketId, RTCPeerConnection>();
+  private pendingVoiceIce = new Map<SocketId, RTCIceCandidateInit[]>();
+  private remoteAudioElements = new Map<SocketId, HTMLAudioElement>();
 
   constructor(props: CollabProps) {
     super(props);
@@ -238,6 +250,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       getUsername: this.getUsername,
       getActiveRoomLink: this.getActiveRoomLink,
       setCollabError: this.setErrorDialog,
+      toggleVoiceChat: this.toggleVoiceChat,
+      toggleVoiceMute: this.toggleVoiceMute,
     };
 
     appJotaiStore.set(collabAPIAtom, collabAPI);
@@ -275,6 +289,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       window.clearTimeout(this.idleTimeoutId);
       this.idleTimeoutId = null;
     }
+    this.disableVoiceChat();
     this.onUmmount?.();
   }
 
@@ -358,6 +373,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.queueBroadcastAllElements.cancel();
     this.queueSaveToFirebase.cancel();
     this.loadImageFiles.cancel();
+    this.disableVoiceChat();
     this.resetErrorIndicator(true);
 
     this.saveCollabRoomToFirebase(
@@ -406,6 +422,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.lastBroadcastedOrReceivedSceneVersion = -1;
     this.portal.close();
     this.fileManager.reset();
+    this.disableVoiceChat();
     if (!opts?.isUnload) {
       this.setIsCollaborating(false);
       this.setActiveRoomLink(null);
@@ -466,6 +483,278 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
   };
 
+  private setVoiceChatState = (
+    updates: Partial<{
+      isEnabled: boolean;
+      isMuted: boolean;
+      participantCount: number;
+      error: string | null;
+    }>,
+  ) => {
+    const prev = appJotaiStore.get(voiceChatStateAtom);
+    appJotaiStore.set(voiceChatStateAtom, {
+      ...prev,
+      ...updates,
+    });
+  };
+
+  private syncVoiceParticipantCount = () => {
+    this.setVoiceChatState({
+      participantCount: this.voicePeers.size + (this.localAudioStream ? 1 : 0),
+    });
+  };
+
+  private clearRemoteAudioElement = (socketId: SocketId) => {
+    const audio = this.remoteAudioElements.get(socketId);
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+      this.remoteAudioElements.delete(socketId);
+    }
+  };
+
+  private closeVoicePeer = (socketId: SocketId) => {
+    const peer = this.voicePeers.get(socketId);
+    if (!peer) {
+      return;
+    }
+    peer.onicecandidate = null;
+    peer.ontrack = null;
+    peer.onconnectionstatechange = null;
+    peer.close();
+    this.voicePeers.delete(socketId);
+    this.pendingVoiceIce.delete(socketId);
+    this.clearRemoteAudioElement(socketId);
+    this.syncVoiceParticipantCount();
+  };
+
+  private shouldInitiateVoiceOffer = (peerSocketId: SocketId) => {
+    const localSocketId = this.portal.socket?.id;
+    if (!localSocketId) {
+      return false;
+    }
+    return localSocketId > peerSocketId;
+  };
+
+  private ensureVoicePeerConnection = (
+    peerSocketId: SocketId,
+  ): RTCPeerConnection => {
+    const existing = this.voicePeers.get(peerSocketId);
+    if (existing) {
+      return existing;
+    }
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+
+    if (this.localAudioStream) {
+      this.localAudioStream.getTracks().forEach((track) => {
+        pc.addTrack(track, this.localAudioStream!);
+      });
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.portal.broadcastVoiceIceCandidate({
+          targetSocketId: peerSocketId,
+          candidate: event.candidate.toJSON(),
+        });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      const [stream] = event.streams;
+      if (!stream) {
+        return;
+      }
+      const existingAudio = this.remoteAudioElements.get(peerSocketId);
+      if (existingAudio) {
+        existingAudio.srcObject = stream;
+        void existingAudio.play().catch(() => undefined);
+        return;
+      }
+      const audio = document.createElement("audio");
+      audio.autoplay = true;
+      audio.srcObject = stream;
+      audio.style.display = "none";
+      document.body.appendChild(audio);
+      this.remoteAudioElements.set(peerSocketId, audio);
+      void audio.play().catch(() => undefined);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (
+        pc.connectionState === "failed" ||
+        pc.connectionState === "disconnected" ||
+        pc.connectionState === "closed"
+      ) {
+        this.closeVoicePeer(peerSocketId);
+      }
+    };
+
+    this.voicePeers.set(peerSocketId, pc);
+    this.syncVoiceParticipantCount();
+    return pc;
+  };
+
+  private createAndSendVoiceOffer = async (peerSocketId: SocketId) => {
+    if (!this.localAudioStream) {
+      return;
+    }
+    const pc = this.ensureVoicePeerConnection(peerSocketId);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    if (offer.sdp) {
+      this.portal.broadcastVoiceOffer({
+        targetSocketId: peerSocketId,
+        sdp: offer.sdp,
+      });
+    }
+  };
+
+  private flushPendingVoiceIce = async (peerSocketId: SocketId) => {
+    const pc = this.voicePeers.get(peerSocketId);
+    const queued = this.pendingVoiceIce.get(peerSocketId);
+    if (!pc || !queued?.length) {
+      return;
+    }
+    this.pendingVoiceIce.delete(peerSocketId);
+    await Promise.all(
+      queued.map((candidate) => pc.addIceCandidate(new RTCIceCandidate(candidate))),
+    );
+  };
+
+  private handleIncomingVoiceOffer = async (
+    payload: SocketUpdateDataSource["VOICE_OFFER"]["payload"],
+  ) => {
+    if (!this.localAudioStream || payload.targetSocketId !== this.portal.socket?.id) {
+      return;
+    }
+    const pc = this.ensureVoicePeerConnection(payload.socketId);
+    await pc.setRemoteDescription({
+      type: "offer",
+      sdp: payload.sdp,
+    });
+    await this.flushPendingVoiceIce(payload.socketId);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    if (answer.sdp) {
+      this.portal.broadcastVoiceAnswer({
+        targetSocketId: payload.socketId,
+        sdp: answer.sdp,
+      });
+    }
+  };
+
+  private handleIncomingVoiceAnswer = async (
+    payload: SocketUpdateDataSource["VOICE_ANSWER"]["payload"],
+  ) => {
+    if (!this.localAudioStream || payload.targetSocketId !== this.portal.socket?.id) {
+      return;
+    }
+    const pc = this.voicePeers.get(payload.socketId);
+    if (!pc) {
+      return;
+    }
+    await pc.setRemoteDescription({
+      type: "answer",
+      sdp: payload.sdp,
+    });
+    await this.flushPendingVoiceIce(payload.socketId);
+  };
+
+  private handleIncomingVoiceIce = async (
+    payload: SocketUpdateDataSource["VOICE_ICE"]["payload"],
+  ) => {
+    if (!this.localAudioStream || payload.targetSocketId !== this.portal.socket?.id) {
+      return;
+    }
+    const pc = this.voicePeers.get(payload.socketId);
+    if (!pc || !pc.remoteDescription) {
+      const existing = this.pendingVoiceIce.get(payload.socketId) || [];
+      existing.push(payload.candidate);
+      this.pendingVoiceIce.set(payload.socketId, existing);
+      return;
+    }
+    await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+  };
+
+  private connectVoiceToExistingCollaborators = async () => {
+    if (!this.localAudioStream) {
+      return;
+    }
+    const socketId = this.portal.socket?.id;
+    if (!socketId) {
+      return;
+    }
+    await Promise.all(
+      [...this.collaborators.keys()]
+        .filter((peerSocketId) => peerSocketId !== socketId)
+        .filter((peerSocketId) => !this.voicePeers.has(peerSocketId))
+        .filter((peerSocketId) => this.shouldInitiateVoiceOffer(peerSocketId))
+        .map((peerSocketId) => this.createAndSendVoiceOffer(peerSocketId)),
+    );
+  };
+
+  private disableVoiceChat = () => {
+    this.voicePeers.forEach((_pc, socketId) => {
+      this.closeVoicePeer(socketId);
+    });
+    this.pendingVoiceIce.clear();
+    if (this.localAudioStream) {
+      this.localAudioStream.getTracks().forEach((track) => track.stop());
+      this.localAudioStream = null;
+    }
+    this.setVoiceChatState({
+      isEnabled: false,
+      isMuted: false,
+      participantCount: 0,
+      error: null,
+    });
+  };
+
+  toggleVoiceChat = async () => {
+    if (this.localAudioStream) {
+      this.disableVoiceChat();
+      return;
+    }
+    if (!this.portal.socket?.id) {
+      this.setVoiceChatState({
+        error: "Start collaboration first",
+      });
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.localAudioStream = stream;
+      this.setVoiceChatState({
+        isEnabled: true,
+        isMuted: false,
+        error: null,
+      });
+      this.syncVoiceParticipantCount();
+      await this.connectVoiceToExistingCollaborators();
+    } catch (error) {
+      console.error(error);
+      this.setVoiceChatState({
+        error: "Microphone access was denied",
+      });
+    }
+  };
+
+  toggleVoiceMute = () => {
+    if (!this.localAudioStream) {
+      return;
+    }
+    const isMuted = !appJotaiStore.get(voiceChatStateAtom).isMuted;
+    this.localAudioStream.getAudioTracks().forEach((track) => {
+      track.enabled = !isMuted;
+    });
+    this.setVoiceChatState({ isMuted });
+  };
+
   private fallbackInitializationHandler: null | (() => any) = null;
 
   startCollaboration = async (
@@ -522,7 +811,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     try {
       this.portal.socket = this.portal.open(
         socketIOClient(import.meta.env.VITE_APP_WS_SERVER_URL, {
-          transports: ["websocket", "polling"],
+          transports: ["websocket"],
         }),
         roomId,
         roomKey,
@@ -666,6 +955,18 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               userState,
               username,
             });
+            break;
+          }
+          case WS_SUBTYPES.VOICE_OFFER: {
+            await this.handleIncomingVoiceOffer(decryptedData.payload);
+            break;
+          }
+          case WS_SUBTYPES.VOICE_ANSWER: {
+            await this.handleIncomingVoiceAnswer(decryptedData.payload);
+            break;
+          }
+          case WS_SUBTYPES.VOICE_ICE: {
+            await this.handleIncomingVoiceIce(decryptedData.payload);
             break;
           }
 
@@ -867,6 +1168,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   setCollaborators(sockets: SocketId[]) {
+    const currentSocketIds = new Set(sockets);
+    this.voicePeers.forEach((_peer, socketId) => {
+      if (!currentSocketIds.has(socketId)) {
+        this.closeVoicePeer(socketId);
+      }
+    });
+
     const collaborators: InstanceType<typeof Collab>["collaborators"] =
       new Map();
     for (const socketId of sockets) {
@@ -879,6 +1187,12 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
     this.collaborators = collaborators;
     this.excalidrawAPI.updateScene({ collaborators });
+
+    if (this.localAudioStream) {
+      void this.connectVoiceToExistingCollaborators();
+    } else {
+      this.syncVoiceParticipantCount();
+    }
   }
 
   updateCollaborator = (socketId: SocketId, updates: Partial<Collaborator>) => {
@@ -946,16 +1260,19 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       getSceneVersion(elements) >
       this.getLastBroadcastedOrReceivedSceneVersion()
     ) {
-      this.portal.broadcastScene(WS_SUBTYPES.UPDATE, elements, false);
+      this.portal.broadcastScene(WS_SUBTYPES.UPDATE, elements, true);
       this.lastBroadcastedOrReceivedSceneVersion = getSceneVersion(elements);
-      this.queueBroadcastAllElements();
     }
   };
 
-  syncElements = (elements: readonly OrderedExcalidrawElement[]) => {
-    this.broadcastElements(elements);
-    this.queueSaveToFirebase();
-  };
+  syncElements = throttle(
+    (elements: readonly OrderedExcalidrawElement[]) => {
+      this.broadcastElements(elements);
+      this.queueSaveToFirebase();
+    },
+    80,
+    { leading: true, trailing: true },
+  );
 
   queueBroadcastAllElements = throttle(() => {
     this.portal.broadcastScene(

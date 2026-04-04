@@ -118,6 +118,30 @@ export type SocketUpdateDataSource = {
       username: string;
     };
   };
+  VOICE_OFFER: {
+    type: WS_SUBTYPES.VOICE_OFFER;
+    payload: {
+      socketId: SocketId;
+      targetSocketId: SocketId;
+      sdp: string;
+    };
+  };
+  VOICE_ANSWER: {
+    type: WS_SUBTYPES.VOICE_ANSWER;
+    payload: {
+      socketId: SocketId;
+      targetSocketId: SocketId;
+      sdp: string;
+    };
+  };
+  VOICE_ICE: {
+    type: WS_SUBTYPES.VOICE_ICE;
+    payload: {
+      socketId: SocketId;
+      targetSocketId: SocketId;
+      candidate: RTCIceCandidateInit;
+    };
+  };
 };
 
 export type SocketUpdateDataIncoming =

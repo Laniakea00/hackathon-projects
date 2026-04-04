@@ -247,6 +247,60 @@ class Portal {
     }
   };
 
+  broadcastVoiceOffer = (payload: {
+    targetSocketId: SocketId;
+    sdp: string;
+  }) => {
+    if (this.socket?.id) {
+      const data: SocketUpdateDataSource["VOICE_OFFER"] = {
+        type: WS_SUBTYPES.VOICE_OFFER,
+        payload: {
+          socketId: this.socket.id as SocketId,
+          targetSocketId: payload.targetSocketId,
+          sdp: payload.sdp,
+        },
+      };
+      return this._broadcastSocketData(data as SocketUpdateData);
+    }
+  };
+
+  broadcastVoiceAnswer = (payload: {
+    targetSocketId: SocketId;
+    sdp: string;
+  }) => {
+    if (this.socket?.id) {
+      const data: SocketUpdateDataSource["VOICE_ANSWER"] = {
+        type: WS_SUBTYPES.VOICE_ANSWER,
+        payload: {
+          socketId: this.socket.id as SocketId,
+          targetSocketId: payload.targetSocketId,
+          sdp: payload.sdp,
+        },
+      };
+      return this._broadcastSocketData(data as SocketUpdateData);
+    }
+  };
+
+  broadcastVoiceIceCandidate = (payload: {
+    targetSocketId: SocketId;
+    candidate: RTCIceCandidateInit;
+  }) => {
+    if (this.socket?.id) {
+      const data: SocketUpdateDataSource["VOICE_ICE"] = {
+        type: WS_SUBTYPES.VOICE_ICE,
+        payload: {
+          socketId: this.socket.id as SocketId,
+          targetSocketId: payload.targetSocketId,
+          candidate: payload.candidate,
+        },
+      };
+      return this._broadcastSocketData(
+        data as SocketUpdateData,
+        true, // volatile
+      );
+    }
+  };
+
   broadcastUserFollowed = (payload: OnUserFollowedPayload) => {
     if (this.socket?.id) {
       this.socket.emit(WS_EVENTS.USER_FOLLOW_CHANGE, payload);
