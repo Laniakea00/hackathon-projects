@@ -4,6 +4,7 @@ services:
       context: .
       args:
         - NODE_ENV=development
+        - VITE_APP_WS_SERVER_URL=http://localhost:8010
     container_name: excalidraw
     ports:
       - "3000:80"
@@ -11,14 +12,8 @@ services:
     stdin_open: true
     healthcheck:
       disable: true
-    environment:
-      - NODE_ENV=development
-      - VITE_WS_URL=ws://localhost:8010/ws
-    volumes:
-      - ./:/opt/node_app/app:delegated
-      - ./package.json:/opt/node_app/package.json
-      - ./yarn.lock:/opt/node_app/yarn.lock
-      - notused:/opt/node_app/app/node_modules
+    depends_on:
+      - collab-server
 
   collab-server:
     build:
@@ -34,6 +29,3 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-
-volumes:
-  notused:

@@ -1,4 +1,4 @@
-FROM --platform=${BUILDPLATFORM} node:20 AS build
+FROM node:20 AS build
 
 WORKDIR /opt/node_app
 
@@ -10,10 +10,12 @@ RUN --mount=type=cache,target=/root/.cache/yarn \
     npm_config_target_arch=${TARGETARCH} yarn --network-timeout 600000
 
 ARG NODE_ENV=production
+ARG VITE_APP_WS_SERVER_URL
+ENV VITE_APP_WS_SERVER_URL=${VITE_APP_WS_SERVER_URL}
 
 RUN npm_config_target_arch=${TARGETARCH} yarn build:app:docker
 
-FROM --platform=${TARGETPLATFORM} nginx:1.27-alpine
+FROM nginx:1.27-alpine
 
 COPY --from=build /opt/node_app/excalidraw-app/build /usr/share/nginx/html
 
