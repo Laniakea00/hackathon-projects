@@ -114,6 +114,18 @@ export function CollabRoom({ roomId }: { roomId: string }) {
           ref={apiRef}
           initialData={initialData || undefined}
           onChange={handleChange}
+          UIOptions={{
+            canvasActions: {
+              changeViewBackgroundColor: true,
+              clearCanvas: true,
+              saveAsImage: true,
+              loadScene: false,
+              saveToActiveFile: false,
+              toggleTheme: true,
+            },
+          }}
+          renderTopRightUI={() => null}
+          renderFooter={() => null}
         />
       </div>
       <ParticipantsPanel participants={participants} />
