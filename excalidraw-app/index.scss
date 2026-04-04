@@ -1,4 +1,12 @@
 @import "../packages/excalidraw/css/variables.module.scss";
+@import "@excalidraw/excalidraw/index.scss";
+
+/* Hide upstream promo/share UI we don't use */
+.excalidraw-ui-top-right,
+.plus-banner,
+.collab-button {
+  display: none !important;
+}
 
 .excalidraw {
   --color-primary-contrast-offset: #625ee0; // to offset Chubb illusion

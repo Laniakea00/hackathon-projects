@@ -1,0 +1,52 @@
+.participants-panel {
+  width: 240px;
+  border-left: 1px solid #e5e7eb;
+  background: #f9fafb;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.participants-panel header {
+  font-weight: 600;
+  font-size: 14px;
+}
+.participants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.participant {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #ececec;
+}
+.participant.inactive {
+  opacity: 0.6;
+}
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.meta .name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.meta .status {
+  font-size: 11px;
+  color: #6b7280;
+}
+.ai-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ai-controls input[type="range"] {
+  width: 80px;
+}

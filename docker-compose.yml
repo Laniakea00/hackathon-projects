@@ -13,11 +13,27 @@ services:
       disable: true
     environment:
       - NODE_ENV=development
+      - VITE_WS_URL=ws://localhost:8010/ws
     volumes:
       - ./:/opt/node_app/app:delegated
       - ./package.json:/opt/node_app/package.json
       - ./yarn.lock:/opt/node_app/yarn.lock
       - notused:/opt/node_app/app/node_modules
+
+  collab-server:
+    build:
+      context: ./collab-server
+    container_name: collab-server
+    ports:
+      - "8010:8000"
+    restart: on-failure
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   notused:
