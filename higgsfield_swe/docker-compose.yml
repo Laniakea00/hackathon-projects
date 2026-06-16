@@ -1,0 +1,39 @@
+services:
+  excalidraw:
+    build:
+      context: .
+      args:
+        - NODE_ENV=development
+        - VITE_APP_WS_SERVER_URL=http://localhost:8010
+    container_name: excalidraw
+    ports:
+      - "3000:80"
+    restart: on-failure
+    stdin_open: true
+    healthcheck:
+      disable: true
+    depends_on:
+      - collab-server
+
+  collab-server:
+    image: node:20
+    container_name: collab-server
+    working_dir: /app
+    command: >
+      sh -lc "yarn install --frozen-lockfile && yarn start:collab-server"
+    volumes:
+      - ./:/app
+    ports:
+      - "8010:3002"
+    restart: on-failure
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
