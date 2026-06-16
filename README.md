@@ -4,7 +4,7 @@ A collection of my hackathon projects, gathered into a single repository. Each p
 
 | Project | Tech | Description |
 |---------|------|-------------|
-| [Datathon-Machine-Learning](Datathon-Machine-Learning) | Python, Pandas, Scikit-learn | Smart City Datathon (3rd place): predicted evening bus ridership on Astana routes from geospatial and time-series features; PCA and correlation analysis. |
-| [QazCode](QazCode) | Python, FastAPI, pgvector | Medical RAG diagnostic API: retrieves Kazakhstani clinical-protocol chunks from pgvector and an LLM returns structured ICD-10 diagnoses, with a BM25 fallback. |
-| [higgsfield_swe](higgsfield_swe) | React, Node.js, WebRTC, OpenAI | Collaborative whiteboard (Excalidraw fork) with real-time multiplayer sync, in-canvas WebRTC voice chat, and an AI assistant that edits the canvas. |
-| [mylink](mylink) | Python, FastAPI, PostgreSQL, OpenAI | AI HR-screening platform: an LLM agent pipeline detects job/CV mismatches, asks clarifying questions over a live chat, and scores candidate relevance. |
+| [Datathon-Machine-Learning](Datathon-Machine-Learning) | Python, Pandas, Scikit-learn | Smart City Datathon: predicted evening bus ridership on Astana routes from geospatial and time-series features; PCA and correlation analysis. (3rd place) |
+| [QazCode](QazCode) | Python, FastAPI, pgvector | Medical RAG diagnostic API: retrieves Kazakhstani clinical-protocol chunks from pgvector and an LLM returns structured ICD-10 diagnoses, with a BM25 fallback. (1st place) |
+| [higgsfield_swe](higgsfield_swe) | React, Node.js, WebRTC, OpenAI | Collaborative whiteboard (Excalidraw fork) with real-time multiplayer sync, in-canvas WebRTC voice chat, and an AI assistant that edits the canvas. (1st place) |
+| [mylink](mylink) | Python, FastAPI, PostgreSQL, OpenAI | AI HR-screening platform: an LLM agent pipeline detects job/CV mismatches, asks clarifying questions over a live chat, and scores candidate relevance. (1st place) |
