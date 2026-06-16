@@ -1,0 +1,10 @@
+.disclaimer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 0 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
+}

@@ -1,0 +1,17 @@
+.idea
+.venv
+venv/
+.env
+
+# data directory — large files, share separately
+*.zip
+data/
+
+# pre-downloaded uv Linux binary for offline Docker builds
+/uv
+/uv-linux.tar.gz
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

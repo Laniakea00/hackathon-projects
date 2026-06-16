@@ -1,0 +1,48 @@
+INFO:     Started server process [4428]
+INFO:     Waiting for application startup.
+2026-02-22 03:28:35,818  INFO      backend.main: Initialising database …
+2026-02-22 03:28:35,931  INFO      backend.main: Loading embeddings from cache …
+2026-02-22 03:28:35,947  INFO      backend.database.session: init_vector_db: 17923 chunks already in DB — skipping.
+2026-02-22 03:28:35,947  INFO      backend.main: Loading embedding model …
+2026-02-22 03:28:35,947  INFO      llm.retriever: Loading embedding model: intfloat/multilingual-e5-large …
+2026-02-22 03:28:35,949  INFO      sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-02-22 03:28:35,949  INFO      sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: intfloat/multilingual-e5-large
+2026-02-22 03:28:36,612  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-02-22 03:28:36,613  WARNING   huggingface_hub.utils._http: Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-02-22 03:28:36,699  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/modules.json "HTTP/1.1 200 OK"
+2026-02-22 03:28:36,887  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/config_sentence_transformers.json "HTTP/1.1 404 Not Found"
+2026-02-22 03:28:37,080  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/config_sentence_transformers.json "HTTP/1.1 404 Not Found"
+2026-02-22 03:28:37,270  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:28:37,358  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/README.md "HTTP/1.1 200 OK"
+2026-02-22 03:28:37,549  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:28:37,634  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/modules.json "HTTP/1.1 200 OK"
+2026-02-22 03:28:37,824  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:28:37,918  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-02-22 03:28:38,107  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-02-22 03:28:38,294  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:28:38,556  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/config.json "HTTP/1.1 200 OK"
+INFO:     Started server process [13680]
+INFO:     Waiting for application startup.
+2026-02-22 03:31:56,060  INFO      backend.main: Initialising database …
+2026-02-22 03:31:56,212  INFO      backend.main: Loading embeddings from cache …
+2026-02-22 03:31:56,236  INFO      backend.database.session: init_vector_db: 17923 chunks already in DB — skipping.
+2026-02-22 03:31:56,236  INFO      backend.main: Loading embedding model …
+2026-02-22 03:31:56,236  INFO      llm.retriever: Loading embedding model: intfloat/multilingual-e5-large …
+2026-02-22 03:31:56,237  INFO      sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-02-22 03:31:56,237  INFO      sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: intfloat/multilingual-e5-large
+2026-02-22 03:31:56,873  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:31:56,959  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/modules.json "HTTP/1.1 200 OK"
+2026-02-22 03:31:57,150  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/config_sentence_transformers.json "HTTP/1.1 404 Not Found"
+2026-02-22 03:31:57,339  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/config_sentence_transformers.json "HTTP/1.1 404 Not Found"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-02-22 03:31:57,339  WARNING   huggingface_hub.utils._http: Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-02-22 03:31:57,528  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:31:57,614  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/README.md "HTTP/1.1 200 OK"
+2026-02-22 03:31:57,812  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:31:57,898  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/modules.json "HTTP/1.1 200 OK"
+2026-02-22 03:31:58,086  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:31:58,171  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-02-22 03:31:58,361  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-02-22 03:31:58,552  INFO      httpx: HTTP Request: HEAD https://huggingface.co/intfloat/multilingual-e5-large/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-02-22 03:31:58,638  INFO      httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/intfloat/multilingual-e5-large/0dc5580a448e4284468b8909bae50fa925907bc5/config.json "HTTP/1.1 200 OK"

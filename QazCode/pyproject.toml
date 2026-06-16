@@ -1,0 +1,29 @@
+[project]
+name = "hack-nu"
+version = "0.1.0"
+description = "Evaluates solutions on a given dataset"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # ── web framework ─────────────────────────────────────────────────
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "httpx>=0.27.0",
+    # ── storage layer ─────────────────────────────────────────────────
+    "sqlalchemy>=2.0",
+    "pgvector>=0.3",                # Vector column type for SQLAlchemy
+    "psycopg2-binary>=2.9",         # PostgreSQL driver (sync)
+    "asyncpg>=0.29",                # async PostgreSQL driver for SQLAlchemy
+    # ── embedding model ───────────────────────────────────────────────
+    "sentence-transformers>=3.0",   # intfloat/multilingual-e5-large
+    "numpy>=1.26",                  # .npy embedding cache in bootstrap.py
+    # ── LLM client ────────────────────────────────────────────────────
+    "openai>=1.30",                 # AsyncOpenAI for OpenAI-compatible endpoints
+    # ── authentication ────────────────────────────────────────────────
+    "bcrypt>=4.0",                  # password hashing (used directly, no passlib)
+    "python-jose[cryptography]>=3.3",   # JWT encoding/decoding
+    # ── utilities ─────────────────────────────────────────────────────
+    "python-dotenv>=1.0",           # load .env in local development
+    "rich>=13.7.0",                 # pretty output in evaluate.py / bootstrap
+    "ipykernel>=7.2.0",             # Jupyter notebook support
+]
