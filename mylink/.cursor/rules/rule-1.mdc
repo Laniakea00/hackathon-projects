@@ -1,0 +1,153 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+📘 Overview
+
+SmartBot — an intelligent HR chatbot widget for websites.
+It analyzes candidate applications and automatically asks clarifying questions if there are mismatches between the vacancy and the candidate’s resume.
+
+The bot helps employers quickly narrow the candidate pool and keep only those who truly match job requirements.
+
+When a candidate applies, a chat widget opens directly on the website, showing questions from the bot in real time.
+
+❗️ The Main Problem
+
+HR specialists and recruiters spend a huge amount of time manually screening candidates who do not meet the basic requirements of a vacancy.
+
+Up to 60–70% of applicants are irrelevant (wrong city, insufficient experience, wrong salary expectations).
+
+Recruiters waste hours per day reading resumes and messaging unfit candidates.
+
+This slows down the hiring process and increases time-to-hire.
+
+💡 SmartBot Solution
+
+SmartBot automates the initial screening stage:
+
+Instantly detects mismatches between the vacancy and candidate data.
+
+Asks clarifying questions in real time.
+
+Calculates a relevance score and records reasons for mismatch.
+
+Presents HR with a filtered list of qualified candidates.
+
+Result — HR saves hours of manual work and focuses only on strong matches.
+
+🎯 Goal
+
+Automate the primary screening process and reduce the employer’s manual workload.
+The bot independently analyzes responses, asks follow-up questions, and generates a relevance score so employers immediately see suitable candidates.
+## 🎯 Overview
+SmartBot — это умный чат-бот в формате виджета на сайте, который помогает работодателям быстро отсеивать нерелевантных кандидатов, задавая уточняющие вопросы после отклика на вакансию.
+
+Основная бизнес-проблема, которую решает MVP:
+> Работодатели тратят слишком много времени на ручной просмотр и первичный скрининг кандидатов.  
+> SmartBot автоматизирует этот процесс, сокращая время найма и улучшая качество подбора.
+
+---
+
+## 🧩 MVP Frontend Goals
+1. Разработать web-виджет SmartBot, который встраивается на сайт.
+2. Реализовать интерфейс для работодателя (веб-панель):
+   - создание вакансий;
+   - просмотр откликов кандидатов;
+   - просмотр релевантности и диалогов.
+3. Обеспечить реалтайм-взаимодействие кандидата с ботом через WebSocket.
+4. Интеграция с Backend API (FastAPI) через REST и WebSocket.
+
+---
+
+## 🧱 Tech Stack
+- Framework: React 18+
+- UI: Mantine UI
+- State Management: Zustand или Redux Toolkit (на выбор)
+- Networking: Axios
+- WebSocket: natively via WebSocket API
+- Widget Integration: Standalone Web Component (iframe / script tag)
+- Optional: react-i18next (интернационализация)
+- Build Tool: Vite
+- Auth: JWT (в будущем)
+
+
+## 🧠 Core Entities (Frontend)
+| Entity | Purpose |
+|---------|----------|
+| Vacancy | Job posting created by the employer |
+| Candidate | User applying to a vacancy |
+| ChatSession | Real-time conversation between candidate and SmartBot |
+| RelevanceScore | % relevance and reasons for mismatch |
+| Employer | Authorized company user (basic profile only in MVP) |
+
+---
+
+## ⚙️ Main Functional Flows (MVP)
+
+### 1️⃣ Employer Flow
+1. Работодатель заходит в веб-панель SmartBot.
+2. Создает вакансию (название, город, опыт, формат, зарплата и т.д.).
+3. Публикует вакансию → она становится видимой для откликов.
+4. В разделе “Кандидаты” отображается:
+   - список откликов;
+   - процент релевантности;
+   - причины несоответствия;
+   - кнопка для просмотра диалога кандидата с ботом.
+
+### 2️⃣ Candidate Flow
+1. Кандидат откликается на вакансию через сайт работодателя.
+2. После отклика открывается SmartBot Widget.
+3. Бот задает уточняющие вопросы (на основе данных из резюме и вакансии).
+4. Кандидат отвечает → данные сохраняются через API/WebSocket.
+5. После завершения диалога бот показывает сообщение “Спасибо, ваши ответы сохранены”.
+
+### 3️⃣ Data Flow (Frontend ↔️ Backend)
+
+[Frontend] Candidate opens Widget
+↓
+[Frontend] Sends initial resume/vacancy IDs to backend
+↓
+[Backend] Returns initial analysis result (possible mismatches)
+↓
+[Frontend] SmartBot displays first question
+↓
+[Candidate] Answers → via WebSocket
+↓
+[Backend] Stores answer, recalculates relevance
+↓
+[Frontend] Receives updated relevance & next question
+↓
+Loop until no more mismatches
+↓
+[Backend] Final relevance summary → stored in DB
+
+
+---
+
+## 💬 UI/UX Requirements
+### Widget (Candidate side)
+- Минималистичный и дружелюбный интерфейс.
+- Bubble-style chat (бот и кандидат).
+- Цветовая схема: нейтральная (светлый фон, акцентный цвет компании).
+- Поддержка real-time обновлений через WebSocket.
+- Loader при ожидании ответа от backend.
+
+Пример UX-флоу:
+> “Спасибо за отклик! Скажите, вы находитесь в Алматы?”  
+> “Да.”  
+> “Отлично, это подходит. Уточните, сколько у вас лет опыта в Python?”
+
+### Employer Panel
+- Dashboard с двумя вкладками:
+  - Вакансии: список + кнопка “Создать вакансию”.
+  - Кандидаты: список с фильтрацией по релевантности.
+- Таблица с полями:
+  - Имя кандидата
+  - Вакансия
+  - % релевантности
+  - Причины несоответствия
+  - Кнопка “Просмотр диалога”
+- Открытие модального окна с чатом для просмотра переписки кандидата и бота.
+
+---

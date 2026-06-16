@@ -1,0 +1,10 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://mylink-trn6.onrender.com/$1"
+    }
+  ]
+}
+
+

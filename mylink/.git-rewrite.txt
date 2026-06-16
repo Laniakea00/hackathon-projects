@@ -1,0 +1,3 @@
+regex:OPENAI_API_KEY[[:space:]]*=[[:space:]]*[^
+]*==>OPENAI_API_KEY=<redacted>
+regex:sk-[A-Za-z0-9_\-]\{20,\}==>sk-REDACTED

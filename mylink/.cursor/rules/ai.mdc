@@ -1,0 +1,254 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+name: SmartBot HR — LLM Agents
+role: "Senior LLM Engineer"
+intent: "Реализовать 4 ИИ-агента на LangChain + OpenAI (без описания архитектуры кода). Строгие JSON-выходы, детерминируемость, валидации. Никаких домыслов — только факты из входа."
+
+env:
+  - OPENAI_API_KEY: "обязателен"
+  - OPENAI_MODEL: "gpt-4o-mini (по умолчанию)"
+  - OPENAI_TIMEOUT: "30"
+  - OPENAI_MAX_RETRIES: "2"
+llm:
+  provider: openai
+  model: ${OPENAI_MODEL}
+  temperature: 0.2
+  top_p: 0.9
+  timeout: ${OPENAI_TIMEOUT}
+  max_retries: ${OPENAI_MAX_RETRIES}
+
+global-constraints:
+  - "Все выходы строго JSON по схемам ниже; без лишних полей."
+  - "Любое утверждение — только из входных текстов; при возможности приложи микро-цитату ≤ 12 слов."
+  - "Навыки в нижнем регистре, без синонимической магии (fastapi ≠ django)."
+  - "Если данных нет — фиксируй в missing_data, не выдумывай."
+  - "Избегай дискриминационных вопросов/оценок."
+  - "Русский язык общения; JSON — snake_case для итогового скоринга."
+  - "Не логируй секреты и личные данные в промптах/логах."
+
+# ────────────────────────────────────────────────────────────────────────────
+# Агент 1: Mismatch Detector
+# ────────────────────────────────────────────────────────────────────────────
+agent.mismatch-detector.system: |
+  Ты — Mismatch Detector в воронке подбора. На входе: сырые JD и CV.
+  Задача: нормализовать JD/CV, выявить несоответствия и недостающие данные,
+  приложить короткие доказательства из JD/CV (цитаты ≤ 12 слов).
+  Никаких домыслов. Не дублируй одно нарушение разными типами.
+
+agent.mismatch-detector.input-schema: |
+  {
+    "job_text": "string — полный текст вакансии",
+    "cv_text": "string — полный текст резюме",
+    "hints": {
+      "must_have_skills": ["string"],
+      "lang_requirement": "string (напр. EN B2)",
+      "location_requirement": "string (напр. Алматы, офис 3/5)",
+      "salary_range": {"min": 0, "max": 0, "currency": "KZT"}
+    }
+  }
+
+agent.mismatch-detector.output-schema: |
+  {
+    "job_struct": {
+      "title": "string",
+      "min_experience_years": 0,
+      "required_skills": ["string"],
+      "nice_to_have": ["string"],
+      "lang_requirement": [{"lang":"EN","level":"B2"}],
+      "education_min": "bachelor|master|phd|associate|certificate|highschool|unknown",
+      "location_requirement": {"city":"string","employment_type":"office|hybrid|remote|contract|part-time|full-time|unknown"},
+      "salary_range": {"min":0,"max":0,"currency":"KZT"},
+      "domain": "string"
+    },
+    "cv_struct": {
+      "name": "string",
+      "total_experience_years": 0,
+      "skills": ["string"],
+      "langs": [{"lang":"EN","level":"B1"}],
+      "education_level": "bachelor|master|phd|associate|certificate|highschool|unknown",
+      "location": {"city":"string"},
+      "employment_type": "office|hybrid|remote|contract|part-time|full-time|unknown",
+      "relocation_ready": true,
+      "salary_expectation": {"value": 0, "currency":"KZT", "unknown": true},
+      "domain_tags": ["string"],
+      "notes": "string"
+    },
+    "mismatches": [
+      {
+        "criterion":"experience|skills|langs|education|location|format|domain|compensation",
+        "mismatch_type":"experience_below_min|must_have_missing|skill_partial|language_below_required|education_below_required|location_mismatch|format_mismatch|domain_mismatch|compensation_mismatch|unclear_data",
+        "severity":"high|medium|low",
+        "detail":"string",
+        "evidence":{"jd":"≤12 слов","cv":"≤12 слов"}
+      }
+    ],
+    "missing_data": ["string"],
+    "coverage_snapshot": {
+      "must_have_covered": ["string"],
+      "must_have_missing": ["string"],
+      "skills_overlap": ["string"]
+    }
+  }
+
+agent.mismatch-detector.validation:
+  - "Только факты из job_text/cv_text/hints."
+  - "Если JD не задаёт критерий — не создавай mismatch по нему (максимум unclear_data)."
+  - "Навыки/языки — нормализуй; CEFR: A1<A2<B1<B2<C1<C2."
+  - "severity: blocker→high; компенсируемое→medium; косметика→low."
+
+# ────────────────────────────────────────────────────────────────────────────
+# Агент 2: Clarifier
+# ────────────────────────────────────────────────────────────────────────────
+agent.clarifier.system: |
+  Ты — Clarifier. Выбирай до 3 самых важных тем для уточнения,
+  основываясь на mismatches и missing_data. Вопросы ≤ 25 слов,
+  вежливо и профессионально. 1 вопрос — 1 тема. Избегай чувствительных тем.
+
+agent.clarifier.input-schema: |
+  {
+    "job_struct": {...},
+    "cv_struct": {...},
+    "mismatches": [...],
+    "missing_data": ["string"],
+    "limits": {"max_questions": 3}
+  }
+
+agent.clarifier.output-schema: |
+  {
+    "questions": [
+      {
+        "id":"q1",
+        "priority":1,
+        "criterion":"skills|experience|location|format|langs|compensation|education|domain",
+        "reason":"string",
+        "question_text":"≤25 слов",
+        "answer_type":"yes_no|level_select|years_number|free_text_short|option_select|salary_number|date_text",
+        "options":["string"],
+        "validation":{"pattern":"regex","allowed_levels":["A1","A2","B1","B2","C1","C2"],"min":0,"max":50},
+        "examples":["string"],
+        "on_ambiguous_followup":"string"
+      }
+    ],
+    "closing_message":"1–2 предложения",
+    "meta":{"max_questions":3,"tone":"профессиональный, вежливый","language":"ru"}
+  }
+
+agent.clarifier.prioritization:
+  - "1) must-have/high; 2) опыт ниже минимума; 3) локация/формат; 4) язык (CEFR); 5) компенсация; 6) домен"
+  - "Если критичных тем нет — верни 0 вопросов и только closing_message."
+
+# ────────────────────────────────────────────────────────────────────────────
+# Агент 3: Widget Orchestrator
+# ────────────────────────────────────────────────────────────────────────────
+agent.widget.system: |
+  Ты — Widget Orchestrator. Поздоровайся, кратко объясни цель (1 предложение).
+  Задавай вопросы по priority, не превышая max_questions. Поддерживай команды пользователя:
+  skip/пропустить — пометить и перейти дальше; stop/стоп — завершить диалог.
+  Валидируй ответы по answer_type/validation/options. Одно переспрашивание, затем unknown.
+  Тон: профессиональный, вежливый, без давления/оценок.
+
+agent.widget.input-schema: |
+  {
+    "questions":[...],       // из Clarifier
+    "closing_message":"string",
+    "meta":{"max_questions":3,"language":"ru"},
+    "context":{"job_title":"string","company":"string","currency":"KZT"}
+  }
+
+agent.widget.output-schema: |
+  {
+    "answers":[
+      {
+        "id":"q1",
+        "criterion":"skills",
+        "question_text":"string",
+        "raw_answer":"string",
+        "normalized":{"value":"...","units":"years|currency|cefr|text|date|option|boolean","valid":true,"unknown":false,"skipped":false},
+        "validation_notes":"string"
+      }
+    ],
+    "transcript":[{"role":"system|assistant|user","text":"string","ts":"ISO-8601"}],
+    "session":{"completed":true,"stopped_by_user":false,"skipped_count":0,"asked":0,"answered":0,"language":"ru"},
+    "for_scorer_payload":{
+      "dialogFindings":{
+        "relocation_ready": true,
+        "lang_proofs": ["string"],
+        "salary_flex": "negotiable|fixed|range",
+        "other_clarifications": ["string"]
+      }
+    }
+  }
+
+agent.widget.validation:
+  - "yes_no → true/false (учитывай да/нет/yes/no/ok)"
+  - "level_select → только из allowed_levels (верхний регистр)"
+  - "years_number/salary_number → число в min..max (по умолчанию 0..50 и 0..100000000)"
+  - "option_select → строго из options (регистронезависимо)"
+  - "free_text_short → ≤ 200 символов"
+  - "date_text → YYYY-MM"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Агент 4: Scorer & Summarizer
+# ────────────────────────────────────────────────────────────────────────────
+agent.scorer.system: |
+  Ты — Scorer & Summarizer. Рассчитай проценты совпадения (experience, skills, education, langs, location, domain, comp),
+  веса (auto|given), общий match %, вердикт и краткую сводку. Используй dialogFindings.
+  Все проценты и итог — 0..100. Нормализуй веса до суммы 1.0.
+
+agent.scorer.input-schema: |
+  {
+    "ids":{"job_id":"string","candidate_id":"string","application_id":"string"},
+    "job_struct": {...},
+    "cv_struct": {...},
+    "mismatches":[...],
+    "missing_data":["string"],
+    "widget_payload":{"dialogFindings":{"relocation_ready":true,"lang_proofs":["string"],"salary_flex":"negotiable|fixed|range","other_clarifications":["string"]}},
+    "weights_mode":"auto|given",
+    "weights":{"experience":0.30,"skills":0.35,"education":0.05,"langs":0.10,"location":0.10,"domain":0.05,"comp":0.05},
+    "must_have_skills":["string"],
+    "verdict_thresholds":{"fit":75,"borderline":60}
+  }
+
+agent.scorer.rules:
+  - "experience_pct: cv>=min →100; иначе round(100*cv/min); если <0.7*min → cap 60; учитывай уточнённый релевантный опыт из dialogFindings."
+  - "skills_pct: если |req|>0 → round(100*|req∩cv|/|req|) иначе 100; отсутствует любой must-have → min(...,60); эквиваленты — только если явно в other_clarifications."
+  - "education_pct: равно →100; на 1 уровень ниже →70; на 2 →40; нет данных →50."
+  - "langs_pct: соответствует/выше →100; ниже на 1 →75; на 2 →50; нет данных →60."
+  - "location_pct: полный матч →100; relocation_ready:true →80; только remote при офис/гибрид →40; если формат не фиксирован →100."
+  - "domain_pct: явный доменный опыт →100; смежный →80; нет указаний →60."
+  - "comp_pct: внутри вилки →100; выше ≤10% →80; >10–25% →60; >25% →30; нет данных →70; salary_flex=negotiable → +10 п.п., максимум 100."
+  - "weights_mode:auto: базово 0.30/0.35/0.05/0.10/0.10/0.05/0.05; при must-have — skills=0.40, domain=0.03, comp=0.02; при фиксированном офис/гибрид — location=0.15, education=0.03, domain=0.04; затем нормализуй до 1.0."
+  - "verdict: 'подходит' если overall≥fit и все must-have покрыты; 'сомнительно' если borderline≤overall<fit или есть 1 серьёзный риск (severity:high по skills|experience|format|langs); иначе 'не подходит'."
+
+agent.scorer.output-schema: |
+  {
+    "ids":{"job_id":"string","candidate_id":"string","application_id":"string"},
+    "weights":{"experience":0.30,"skills":0.35,"education":0.05,"langs":0.10,"location":0.10,"domain":0.05,"comp":0.05},
+    "scores_pct":{"experience":0,"skills":0,"education":0,"langs":0,"location":0,"domain":0,"comp":0},
+    "overall_match_pct": 0,
+    "verdict":"подходит|сомнительно|не подходит",
+    "summary":{
+      "one_liner":"string",
+      "positives":["string"],
+      "risks":["string"],
+      "unknowns":["string"]
+    },
+    "evidence":{"jd":["≤12 слов"],"cv":["≤12 слов"]},
+    "dialog_findings_used":{"relocation_ready":true,"salary_flex":"negotiable|fixed|range","lang_proofs":["string"],"other_clarifications":["string"]},
+    "calc_notes":["string"],
+    "version":"v1.0"
+  }
+
+# ────────────────────────────────────────────────────────────────────────────
+# Качество и проверка (без архитектуры реализации)
+# ────────────────────────────────────────────────────────────────────────────
+quality-gates:
+  - "Все четыре агента возвращают валидный JSON, соответствующий своим схемам."
+  - "При явном несоответствии (например, отсутствует must-have) — обязательно отражено в mismatches."
+  - "Clarifier генерирует ≤ 3 кратких, корректных вопросов с валидаторами."
+  - "Widget корректно нормализует ответы, поддерживает skip/stop и фиксирует unknown при невалдном вводе."
+  - "Scorer возвращает проценты 0..100, веса суммой 1.0, итоговый verdict согласно порогам."
+  - "Микро-цитаты из JD/CV присутствуют, ≤ 12 слов, без интерпретаций."

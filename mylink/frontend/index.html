@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/mylink-logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MyLink — Найдите идеального кандидата</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      :root{
+        --font-sans: -apple-system, BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Inter","Segoe UI",Roboto,"Helvetica Neue",Arial,system-ui,"Apple Color Emoji","Segoe UI Emoji";
+        --c-primary-600:#2E6BFF; --c-primary-700:#2556CC;
+        --c-success-600:#12B76A; --c-warning-600:#F79009; --c-danger-600:#EF4444;
+        --c-gray-50:#F9FAFB; --c-gray-100:#F2F4F7; --c-gray-300:#E5E7EB; --c-gray-400:#D0D5DD;
+        --c-gray-600:#475467; --c-gray-700:#344054; --c-gray-900:#101828;
+        --text-heading:#101828; --text-body:#344054; --text-muted:#475467; --text-inverse:#fff;
+        --radius-sm:8px; --radius-md:10px; --radius-lg:12px; --radius-pill:9999px;
+        --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+        --shadow-md:0 2px 8px rgba(16,24,40,.08);
+        --shadow-lg:0 8px 24px rgba(16,24,40,.12);
+      }
+      html,body{font-family:var(--font-sans); color:var(--text-body); background:#fff;}
+      h1,h2,h3{color:var(--text-heading); letter-spacing:-0.01em;}
+      .container{max-width:1280px;margin:0 auto;padding:0 24px;}
+      .hero{background:var(--c-gray-100);padding:48px 0 56px;}
+      /* Auth gradient canvas */
+      .auth-bg{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+      .auth-gradient{position:absolute;width:1200px;height:1200px;left:-200px;top:-200px;background:radial-gradient(50% 50% at 50% 50%, rgba(59,130,246,.35) 0%, rgba(59,130,246,0) 60%), radial-gradient(40% 40% at 70% 30%, rgba(96,165,250,.26) 0%, rgba(96,165,250,0) 60%);filter:blur(60px);animation:spin-slow 24s linear infinite;}
+      @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg);} }
+      /* Buttons unified blue style */
+      .btn-primary{background:var(--c-primary-600);color:#fff;border:none;border-radius:12px;padding:10px 16px;font-weight:600}
+      .btn-primary:hover{background:var(--c-primary-700)}
+      .btn-outline{background:#fff;color:var(--c-primary-600);border:1px solid var(--c-primary-600);border-radius:12px;padding:10px 16px;font-weight:600}
+      .btn-outline:hover{background:#EEF2FF}
+      .badge{display:inline-block;padding:4px 8px;border-radius:9999px;background:#F2F4F7;color:#344054;font-size:12px}
+      .card{background:#fff;border:1px solid #E6E8EB;border-radius:12px;box-shadow:var(--shadow-sm)}
+      .tabs{display:flex;gap:12px;margin-top:16px}
+      .tab{padding:8px 14px;border-radius:9999px;background:#F2F4F7;color:#344054;font-weight:500}
+      .tab.active{background:#12B76A;color:#fff}
+      .grid-cols-preview{display:grid;grid-template-columns:58% 42%;gap:24px;margin-top:24px}
+      @media(max-width:1024px){ .grid-cols-preview{grid-template-columns:1fr;} }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
