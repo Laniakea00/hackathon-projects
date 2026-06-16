@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+*.class
+target/
+bin/
+obj/
+.idea/
+.vscode/
+.env
